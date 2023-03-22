@@ -1,2 +1,2 @@
-# improved-faster-rcnn
-Object Detector for Autonomous Vehicles Based on Improved Faster-RCNN
+# Object Detector for Autonomous Vehicles Based on Improved Faster-RCN
+Zirui Wang
