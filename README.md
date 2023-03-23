@@ -1,2 +1,2 @@
-# Object Detector for Autonomous Vehicles Based on Improved Faster-RCN
+# improved-faster-rcnn-pytorch
 Zirui Wang
