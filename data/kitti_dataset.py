@@ -2,6 +2,7 @@ import csv
 import os
 
 from PIL import Image
+from data.dataset import Transform
 
 from torch.utils.data import Dataset
 
@@ -34,7 +35,7 @@ class Kitti(Dataset):
     image_dir_name = "image_2"
     labels_dir_name = "label_2"
 
-    def __init__(self, train=True, transforms=None):
+    def __init__(self, train=True):
         self.images = []
         self.labels = []
         self.root = os.getcwd()     # absolute path? relative path?
@@ -73,7 +74,8 @@ class Kitti(Dataset):
             - locations: float[3]
             - rotation_y: float
         """
-        image = Image.open(self.images[i])
+        # read image
+        image = Image.open(self.images[i]).convert('RGB')
 
         if self.train:
             params = self.parse_label(i)
