@@ -77,7 +77,7 @@ class Transform(object):
 class Dataset:
     def __init__(self, opt):
         self.opt = opt
-        self.db = VOCBboxDataset(opt.voc_data_dir)
+        self.db = Kitti(opt.voc_data_dir)
         self.tsf = Transform(opt.min_size, opt.max_size)
 
     def __getitem__(self, idx):
