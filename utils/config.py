@@ -7,7 +7,7 @@ from pprint import pprint
 
 class Config:
     # data
-    voc_data_dir = '/dataset/PASCAL2007/VOC2007/'
+    voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     min_size = 600  # image resize
     max_size = 1000 # image resize
     num_workers = 8
@@ -50,10 +50,7 @@ class Config:
     caffe_pretrain = False # use caffe pretrained model instead of torchvision
     caffe_pretrain_path = 'checkpoints/vgg16_caffe.pth'
 
-    # visualize:
-    visualize = False
-
-    def parse_args(self, kwargs):
+    def _parse(self, kwargs):
         state_dict = self._state_dict()
         for k, v in kwargs.items():
             if k not in state_dict:
