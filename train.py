@@ -21,9 +21,13 @@ import resource
 rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
 resource.setrlimit(resource.RLIMIT_NOFILE, (20480, rlimit[1]))
 
+# linux specific backend: check https://matplotlib.org/stable/users/explain/backends.html
 matplotlib.use('agg')
 
 def train(**kwargs):
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
 
     # parse config file
     opt.parse_args(kwargs)
@@ -48,47 +52,50 @@ def train(**kwargs):
     
     faster_rcnn = FasterRCNNVGG16()
     print('model construct completed')
-    trainer = FasterRCNNTrainer(faster_rcnn).cuda()
+    trainer = FasterRCNNTrainer(faster_rcnn).to(device)
 
-    # if opt.load_path:
-    #     trainer.load(opt.load_path)
-    #     print('load pretrained model from %s' % opt.load_path)
+    if opt.load_path:
+        trainer.load(opt.load_path)
+        print('load pretrained model from %s' % opt.load_path)
+
     trainer.vis.text(dataset.db.label_names, win='labels')
     best_map = 0
     lr_ = opt.lr
     for epoch in range(opt.epoch):
         trainer.reset_meters()
-        for ii, (img, bbox_, label_, scale) in tqdm(enumerate(dataloader)):
+
+        # mini-batch: only support batch size = 1? 
+        for idx, (img, bbox_, label_, scale) in tqdm(enumerate(dataloader)):
             scale = at.scalar(scale)
-            img, bbox, label = img.cuda().float(), bbox_.cuda(), label_.cuda()
+            img, bbox, label = img.to(device).float(), bbox_.to(device), label_.to(device)
             trainer.train_step(img, bbox, label, scale)
+            # visualization 
+            if opt.visualize:
+                if (idx + 1) % opt.plot_every == 0:
+                    if os.path.exists(opt.debug_file):
+                        ipdb.set_trace()
+                    # plot loss
+                    trainer.vis.plot_many(trainer.get_meter_data())
 
-            if (ii + 1) % opt.plot_every == 0:
-                if os.path.exists(opt.debug_file):
-                    ipdb.set_trace()
+                    # plot groud truth bboxes
+                    ori_img_ = inverse_normalize(at.tonumpy(img[0]))
+                    gt_img = visdom_bbox(ori_img_,
+                                        at.tonumpy(bbox_[0]),
+                                        at.tonumpy(label_[0]))
+                    trainer.vis.img('gt_img', gt_img)
 
-                # plot loss
-                trainer.vis.plot_many(trainer.get_meter_data())
+                    # plot predict bboxes
+                    _bboxes, _labels, _scores = trainer.faster_rcnn.predict([ori_img_], visualize=True)
+                    pred_img = visdom_bbox(ori_img_,
+                                        at.tonumpy(_bboxes[0]),
+                                        at.tonumpy(_labels[0]).reshape(-1),
+                                        at.tonumpy(_scores[0]))
+                    trainer.vis.img('pred_img', pred_img)
 
-                # plot groud truth bboxes
-                ori_img_ = inverse_normalize(at.tonumpy(img[0]))
-                gt_img = visdom_bbox(ori_img_,
-                                     at.tonumpy(bbox_[0]),
-                                     at.tonumpy(label_[0]))
-                trainer.vis.img('gt_img', gt_img)
-
-                # plot predicti bboxes
-                _bboxes, _labels, _scores = trainer.faster_rcnn.predict([ori_img_], visualize=True)
-                pred_img = visdom_bbox(ori_img_,
-                                       at.tonumpy(_bboxes[0]),
-                                       at.tonumpy(_labels[0]).reshape(-1),
-                                       at.tonumpy(_scores[0]))
-                trainer.vis.img('pred_img', pred_img)
-
-                # rpn confusion matrix(meter)
-                trainer.vis.text(str(trainer.rpn_cm.value().tolist()), win='rpn_cm')
-                # roi confusion matrix
-                trainer.vis.img('roi_cm', at.totensor(trainer.roi_cm.conf, False).float())
+                    # rpn confusion matrix(meter)
+                    trainer.vis.text(str(trainer.rpn_cm.value().tolist()), win='rpn_cm')
+                    # roi confusion matrix
+                    trainer.vis.img('roi_cm', at.totensor(trainer.roi_cm.conf, False).float())
         eval_result = eval(test_dataloader, faster_rcnn, test_num=opt.test_num)
         trainer.vis.plot('test_map', eval_result['map'])
         lr_ = trainer.faster_rcnn.optimizer.param_groups[0]['lr']
@@ -111,7 +118,7 @@ def train(**kwargs):
 def eval(dataloader, faster_rcnn, test_num=10000):
     pred_bboxes, pred_labels, pred_scores = list(), list(), list()
     gt_bboxes, gt_labels, gt_difficults = list(), list(), list()
-    for ii, (imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_) in tqdm(enumerate(dataloader)):
+    for idx, (imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_) in tqdm(enumerate(dataloader)):
         sizes = [sizes[0][0].item(), sizes[1][0].item()]
         pred_bboxes_, pred_labels_, pred_scores_ = faster_rcnn.predict(imgs, [sizes])
         gt_bboxes += list(gt_bboxes_.numpy())
@@ -120,7 +127,7 @@ def eval(dataloader, faster_rcnn, test_num=10000):
         pred_bboxes += pred_bboxes_
         pred_labels += pred_labels_
         pred_scores += pred_scores_
-        if ii == test_num: break
+        if idx == test_num: break
 
     result = eval_detection_voc(
         pred_bboxes, pred_labels, pred_scores,
