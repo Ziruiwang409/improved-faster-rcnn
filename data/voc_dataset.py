@@ -3,10 +3,13 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
+from torch.utils.data import Dataset
+from data.dataset import Transformer
+
 from .util import read_image
 
 
-class VOCBboxDataset:
+class VOCBboxDataset(Dataset):
     """Bounding box dataset for PASCAL `VOC`_.
 
     .. _`VOC`: http://host.robots.ox.ac.uk/pascal/VOC/voc2012/
@@ -62,22 +65,14 @@ class VOCBboxDataset:
 
     """
 
-    def __init__(self, data_dir, split='trainval',
+    def __init__(self, opt, split='trainval',
                  use_difficult=False, return_difficult=False,
                  ):
-
-        # if split not in ['train', 'trainval', 'val']:
-        #     if not (split == 'test' and year == '2007'):
-        #         warnings.warn(
-        #             'please pick split from \'train\', \'trainval\', \'val\''
-        #             'for 2012 dataset. For 2007 dataset, you can pick \'test\''
-        #             ' in addition to the above mentioned splits.'
-        #         )
-        id_list_file = os.path.join(
-            data_dir, 'ImageSets/Main/{0}.txt'.format(split))
-
+        self.opt = opt
+        id_list_file = os.path.join(opt.voc_data_dir, 'ImageSets/Main/{0}.txt'.format(split))
+        self.tsf = Transformer(opt.min_size, opt.max_size)
         self.ids = [id_.strip() for id_ in open(id_list_file)]
-        self.data_dir = data_dir
+        self.data_dir = opt.voc_data_dir
         self.use_difficult = use_difficult
         self.return_difficult = return_difficult
         self.label_names = VOC_BBOX_LABEL_NAMES
@@ -85,7 +80,7 @@ class VOCBboxDataset:
     def __len__(self):
         return len(self.ids)
 
-    def get_example(self, i):
+    def __getitem__(self, i):
         """Returns the i-th example.
 
         Returns a color image and bounding boxes. The image is in CHW format.
@@ -129,9 +124,8 @@ class VOCBboxDataset:
 
         # if self.return_difficult:
         #     return img, bbox, label, difficult
-        return img, bbox, label, difficult
-
-    __getitem__ = get_example
+        img, bbox, label, scale = self.tsf((img, bbox, label))
+        return img.copy(), bbox.copy(), label.copy(), scale
 
 
 VOC_BBOX_LABEL_NAMES = (

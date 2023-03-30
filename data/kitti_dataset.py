@@ -1,13 +1,16 @@
-import csv
 import os
+import csv
 
-from PIL import Image
-from data.dataset import Transform
+import numpy as np
 
 from torch.utils.data import Dataset
+from data.dataset import Transformer
+
+from PIL import Image
 
 
-class Kitti(Dataset):
+
+class KITTIDataset(Dataset):
     """`KITTI <http://www.cvlibs.net/datasets/kitti/eval_object.php?obj_benchmark>`_ Dataset.
 
     It corresponds to the "left color images of object" dataset, for object detection.
@@ -35,14 +38,19 @@ class Kitti(Dataset):
     image_dir_name = "image_2"
     labels_dir_name = "label_2"
 
-    def __init__(self, train=True):
+    def __init__(self, opt, split='training', use_difficult=False, 
+                    return_difficult=False):
+        self.opt = opt
+        self.tsf = Transformer(opt.min_size, opt.max_size)
         self.images = []
         self.labels = []
-        self.root = os.getcwd()     # absolute path? relative path?
+        self.use_difficult = use_difficult
+        self.return_difficult = return_difficult
+        self.data_dir = opt.kitti_data_dir     # absolute path? relative path?
         self.train = train
         self.transforms = transforms
-        self.sub_set = "training" if self.train else "testing"
-        self.dataset_dir = os.path.join(self.root,self.__class__.__name__,self.sub_set)
+        self.sub_set = "training" if self.split == 'training' else "testing"
+        self.dataset_dir = os.path.join(self.data_dir,self.sub_set)
         
         if self.train:  
             # training set
@@ -74,36 +82,57 @@ class Kitti(Dataset):
             - locations: float[3]
             - rotation_y: float
         """
-        # read image
-        image = Image.open(self.images[i]).convert('RGB')
-
-        if self.train:
-            params = self.parse_label(i)
+        # get parameters
+        if self.split == 'training':
+            params = []
+            with open(self.labels[i]) as inp:
+                content = csv.reader(inp, delimiter=" ")
+                for line in content:
+                    params.append(
+                        {
+                            "type": line[0],
+                            "truncated": float(line[1]),
+                            "occluded": int(line[2]),
+                            "alpha": float(line[3]),
+                            "bbox": [float(x) for x in line[4:8]],
+                            "dimensions": [float(x) for x in line[8:11]],
+                            "location": [float(x) for x in line[11:14]],
+                            "rotation_y": float(line[14]),
+                        }
+                    )
         else: 
             params = None
 
-        if self.transforms:
-            image, params = self.transforms(image, params)
-        return image, params
+        # image
+        img = Image.open(self.images[i]).convert('RGB')
+        # bounding box
+        bbox = list()
+        bbox.append(params['bbox'])
+        bbox = np.stack(bbox).astype(np.float32)
 
-    def parse_label(self, index):
-        params = []
-        with open(self.labels[index]) as inp:
-            content = csv.reader(inp, delimiter=" ")
-            for line in content:
-                params.append(
-                    {
-                        "type": line[0],
-                        "truncated": float(line[1]),
-                        "occluded": int(line[2]),
-                        "alpha": float(line[3]),
-                        "bbox": [float(x) for x in line[4:8]],
-                        "dimensions": [float(x) for x in line[8:11]],
-                        "location": [float(x) for x in line[11:14]],
-                        "rotation_y": float(line[14]),
-                    }
-                )
-        return params
+        # label
+        label = list()
+        label.append(KITTI_LABEL_NAMES.index(params['type']))
+        label = np.stack(label).astype(np.int32)
+        # difficult
+        difficult = list()
+        difficult.append(1)   # equal weight for each object
+        difficult = np.array(difficult, dtype=np.bool).astype(np.uint8)
+
+        # transform 
+        img, bbox, label, scale = self.tsf((img, bbox, label))
+        return img.copy(), bbox.copy(), label.copy(), scale
 
     def __len__(self):
         return len(self.images)
+
+KITTI_LABEL_NAMES = (
+    'Car', 
+    'Van', 
+    'Truck',
+    'Pedestrian', 
+    'Person_sitting', 
+    'Cyclist', 
+    'Tram',
+    'Misc',
+    'DontCare')
