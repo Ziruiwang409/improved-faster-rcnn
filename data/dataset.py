@@ -6,6 +6,7 @@ from torchvision import transforms as tvtsf
 from data import util
 import numpy as np
 from utils.config import opt
+from data.voc_dataset import VOCBboxDataset
 
 
 def inverse_normalize(img):
