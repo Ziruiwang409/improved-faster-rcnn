@@ -28,7 +28,7 @@ class FasterRCNNTrainer(nn.Module):
     The losses include:
 
     * :obj:`rpn_loc_loss`: The localization loss for \
-        Region Proposal Network (RPN).
+        Region Proposal Network (get).
     * :obj:`rpn_cls_loss`: The classification loss for RPN.
     * :obj:`roi_loc_loss`: The localization loss for the head module.
     * :obj:`roi_cls_loss`: The classification loss for the head module.
@@ -163,14 +163,6 @@ class FasterRCNNTrainer(nn.Module):
         losses = losses + [sum(losses)]
 
         return LossTuple(*losses)
-
-    def train_step(self, imgs, bboxes, labels, scale):
-        self.optimizer.zero_grad()
-        losses = self.forward(imgs, bboxes, labels, scale)
-        losses.total_loss.backward()
-        self.optimizer.step()
-        self.update_meters(losses)
-        return losses
 
     def save(self, save_optimizer=False, save_path=None, **kwargs):
         """serialize models include optimizer and other info

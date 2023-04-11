@@ -78,8 +78,8 @@ class FasterRCNN(nn.Module):
         self.head = head
 
         # mean and std
-        self.loc_normalize_mean = loc_normalize_mean
-        self.loc_normalize_std = loc_normalize_std
+        self.loc_normalize_mean = (0., 0., 0., 0.)
+        self.loc_normalize_std = (0.1, 0.1, 0.2, 0.2)
         self.use_preset('evaluate')
 
     @property
@@ -159,6 +159,18 @@ class FasterRCNN(nn.Module):
             self.score_thresh = 0.05
         else:
             raise ValueError('preset must be visualize or evaluate')
+    
+    # NOTE: Override in the child class (improved_faster_rcnn.py)
+    def feature_extraction_module(self, x):
+        raise NotImplementedError
+
+    # NOTE: Override in the child class (improved_faster_rcnn.py)
+    def roi_pooling_module(self, feature, roi):
+        raise NotImplementedError
+
+    # NOTE: Override in the child class (improved_faster_rcnn.py)
+    def bbox_regression_and_classification_module(self, roi_pool_feat):
+        raise NotImplementedError
 
     def _suppress(self, raw_cls_bbox, raw_prob):
         bbox = list()
@@ -212,82 +224,83 @@ class FasterRCNN(nn.Module):
                Each value indicates how confident the prediction is.
 
         """
-        self.eval()
-        if visualize:
-            self.use_preset('visualize')
-            prepared_imgs = list()
-            sizes = list()
-            for img in imgs:
-                size = img.shape[1:]
-                img = preprocess(at.tonumpy(img))
-                prepared_imgs.append(img)
-                sizes.append(size)
-        else:
-             prepared_imgs = imgs 
-        bboxes = list()
-        labels = list()
-        scores = list()
-        for img, size in zip(prepared_imgs, sizes):
-            img = at.totensor(img[None]).float()
-            scale = img.shape[3] / size[1]
-            roi_cls_loc, roi_scores, rois, _ = self(img, scale=scale)
-            # We are assuming that batch size is 1.
-            roi_score = roi_scores.data
-            roi_cls_loc = roi_cls_loc.data
-            roi = at.totensor(rois) / scale
+        with t.no_grad():
+            self.eval()
+            if visualize:
+                self.use_preset('visualize')
+                prepared_imgs = list()
+                sizes = list()
+                for img in imgs:
+                    size = img.shape[1:]
+                    img = preprocess(at.tonumpy(img))
+                    prepared_imgs.append(img)
+                    sizes.append(size)
+            else:
+                prepared_imgs = imgs 
+            bboxes = list()
+            labels = list()
+            scores = list()
+            for img, size in zip(prepared_imgs, sizes):
+                img = at.totensor(img[None]).float()
+                scale = img.shape[3] / size[1]
+                roi_cls_loc, roi_scores, rois, _ = self(img, scale=scale)
+                # We are assuming that batch size is 1.
+                roi_score = roi_scores.data
+                roi_cls_loc = roi_cls_loc.data
+                roi = at.totensor(rois) / scale
 
-            # Convert predictions to bounding boxes in image coordinates.
-            # Bounding boxes are scaled to the scale of the input images.
-            mean = t.Tensor(self.loc_normalize_mean).cuda(). \
-                repeat(self.n_class)[None]
-            std = t.Tensor(self.loc_normalize_std).cuda(). \
-                repeat(self.n_class)[None]
+                # Convert predictions to bounding boxes in image coordinates.
+                # Bounding boxes are scaled to the scale of the input images.
+                mean = t.Tensor(self.loc_normalize_mean).cuda(). \
+                    repeat(self.n_class)[None]
+                std = t.Tensor(self.loc_normalize_std).cuda(). \
+                    repeat(self.n_class)[None]
 
-            roi_cls_loc = (roi_cls_loc * std + mean)
-            roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
-            roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
-            cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
-                                at.tonumpy(roi_cls_loc).reshape((-1, 4)))
-            cls_bbox = at.totensor(cls_bbox)
-            cls_bbox = cls_bbox.view(-1, self.n_class * 4)
-            # clip bounding box
-            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
-            cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
+                roi_cls_loc = (roi_cls_loc * std + mean)
+                roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
+                roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
+                cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
+                                    at.tonumpy(roi_cls_loc).reshape((-1, 4)))
+                cls_bbox = at.totensor(cls_bbox)
+                cls_bbox = cls_bbox.view(-1, self.n_class * 4)
+                # clip bounding box
+                cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
+                cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
 
-            prob = (F.softmax(at.totensor(roi_score), dim=1))
+                prob = (F.softmax(at.totensor(roi_score), dim=1))
 
-            bbox, label, score = self._suppress(cls_bbox, prob)
-            bboxes.append(bbox)
-            labels.append(label)
-            scores.append(score)
+                bbox, label, score = self._suppress(cls_bbox, prob)
+                bboxes.append(bbox)
+                labels.append(label)
+                scores.append(score)
 
-        self.use_preset('evaluate')
-        self.train()
-        return bboxes, labels, scores
+            self.use_preset('evaluate')
+            self.train()
+            return bboxes, labels, scores
 
-    def get_optimizer(self):
-        """
-        return optimizer, It could be overwriten if you want to specify 
-        special optimizer
-        """
-        lr = opt.lr
-        params = []
-        for key, value in dict(self.named_parameters()).items():
-            if value.requires_grad:
-                if 'bias' in key:
-                    params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
-                else:
-                    params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
-        if opt.use_adam:
-            self.optimizer = t.optim.Adam(params)
-        else:
-            self.optimizer = t.optim.SGD(params, momentum=0.9)
-        return self.optimizer
 
-    def scale_lr(self, decay=0.1):
-        for param_group in self.optimizer.param_groups:
-            param_group['lr'] *= decay
-        return self.optimizer
+    
+
+def smooth_l1_loss(x, t, in_weight, sigma):
+    sigma2 = sigma ** 2
+    diff = in_weight * (x - t)
+    abs_diff = diff.abs()
+    flag = (abs_diff.data < (1. / sigma2)).float()
+    y = (flag * (sigma2 / 2.) * (diff ** 2) +
+         (1 - flag) * (abs_diff - 0.5 / sigma2))
+    return y.sum()
+
+
+def bbox_regression_loss(pred_loc, gt_loc, gt_label, sigma):
+    in_weight = t.zeros(gt_loc.shape).cuda()
+    # Localization loss is calculated only for positive rois.
+    # NOTE:  unlike origin implementation, 
+    # we don't need inside_weight and outside_weight, they can calculate by gt_label
+    in_weight[(gt_label > 0).view(-1, 1).expand_as(in_weight).cuda()] = 1
+    loc_loss = smooth_l1_loss(pred_loc, gt_loc, in_weight.detach(), sigma)
+    # Normalize by total number of negtive and positive rois.
+    loc_loss /= ((gt_label >= 0).sum().float()) # ignore gt_label==-1 for rpn_loss
+    return loc_loss
 
 
 

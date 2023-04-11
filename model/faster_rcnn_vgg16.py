@@ -2,13 +2,22 @@ from __future__ import  absolute_import
 import torch as t
 from torch import nn
 from torchvision.models import vgg16
-from torchvision.ops import RoIPool
+from collections import namedtuple
 
 from model.region_proposal_network import RegionProposalNetwork
 from model.faster_rcnn import FasterRCNN
+from model.roi import FPNRoIPool
+
 from utils import array_tool as at
 from utils.config import opt
 
+LossTuple = namedtuple('LossTuple',
+                       ['rpn_loc_loss',
+                        'rpn_cls_loss',
+                        'roi_loc_loss',
+                        'roi_cls_loss',
+                        'total_loss'
+                        ])
 
 def decom_vgg16():
     # the 30th layer of features is relu of conv5_3
@@ -113,7 +122,7 @@ class VGG16RoIHead(nn.Module):
         self.n_class = n_class
         self.roi_size = roi_size
         self.spatial_scale = spatial_scale
-        self.roi = RoIPool( (self.roi_size, self.roi_size),self.spatial_scale)
+        self.roi = FPNRoIPool(self.roi_size, self.roi_size,self.spatial_scale)
 
     def forward(self, x, rois, roi_indices):
         """Forward the chain.

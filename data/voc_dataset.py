@@ -3,19 +3,13 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from torch.utils.data import Dataset
-from data.dataset import Transformer
-
 from .util import read_image
 
 
-class VOCBboxDataset(Dataset):
+class VOCBboxDataset:
     """Bounding box dataset for PASCAL `VOC`_.
-
     .. _`VOC`: http://host.robots.ox.ac.uk/pascal/VOC/voc2012/
-
     The index corresponds to each image.
-
     When queried by an index, if :obj:`return_difficult == False`,
     this dataset returns a corresponding
     :obj:`img, bbox, label`, a tuple of an image, bounding boxes and labels.
@@ -23,31 +17,25 @@ class VOCBboxDataset(Dataset):
     If :obj:`return_difficult == True`, this dataset returns corresponding
     :obj:`img, bbox, label, difficult`. :obj:`difficult` is a boolean array
     that indicates whether bounding boxes are labeled as difficult or not.
-
     The bounding boxes are packed into a two dimensional tensor of shape
     :math:`(R, 4)`, where :math:`R` is the number of bounding boxes in
     the image. The second axis represents attributes of the bounding box.
     They are :math:`(y_{min}, x_{min}, y_{max}, x_{max})`, where the
     four attributes are coordinates of the top left and the bottom right
     vertices.
-
     The labels are packed into a one dimensional tensor of shape :math:`(R,)`.
     :math:`R` is the number of bounding boxes in the image.
     The class name of the label :math:`l` is :math:`l` th element of
     :obj:`VOC_BBOX_LABEL_NAMES`.
-
     The array :obj:`difficult` is a one dimensional boolean array of shape
     :math:`(R,)`. :math:`R` is the number of bounding boxes in the image.
     If :obj:`use_difficult` is :obj:`False`, this array is
     a boolean array with all :obj:`False`.
-
     The type of the image, the bounding boxes and the labels are as follows.
-
     * :obj:`img.dtype == numpy.float32`
     * :obj:`bbox.dtype == numpy.float32`
     * :obj:`label.dtype == numpy.int32`
     * :obj:`difficult.dtype == numpy.bool`
-
     Args:
         data_dir (string): Path to the root of the training data. 
             i.e. "/data/image/voc/VOCdevkit/VOC2007/"
@@ -62,17 +50,24 @@ class VOCBboxDataset(Dataset):
             a boolean array
             that indicates whether bounding boxes are labeled as difficult
             or not. The default value is :obj:`False`.
-
     """
 
-    def __init__(self, opt, split='trainval',
+    def __init__(self, data_dir, split='trainval',
                  use_difficult=False, return_difficult=False,
                  ):
-        self.opt = opt
-        id_list_file = os.path.join(opt.voc_data_dir, 'ImageSets/Main/{0}.txt'.format(split))
-        self.tsf = Transformer(opt.min_size, opt.max_size)
+
+        # if split not in ['train', 'trainval', 'val']:
+        #     if not (split == 'test' and year == '2007'):
+        #         warnings.warn(
+        #             'please pick split from \'train\', \'trainval\', \'val\''
+        #             'for 2012 dataset. For 2007 dataset, you can pick \'test\''
+        #             ' in addition to the above mentioned splits.'
+        #         )
+        id_list_file = os.path.join(
+            data_dir, 'ImageSets/Main/{0}.txt'.format(split))
+
         self.ids = [id_.strip() for id_ in open(id_list_file)]
-        self.data_dir = opt.voc_data_dir
+        self.data_dir = data_dir
         self.use_difficult = use_difficult
         self.return_difficult = return_difficult
         self.label_names = VOC_BBOX_LABEL_NAMES
@@ -80,18 +75,14 @@ class VOCBboxDataset(Dataset):
     def __len__(self):
         return len(self.ids)
 
-    def __getitem__(self, i):
+    def get_example(self, i):
         """Returns the i-th example.
-
         Returns a color image and bounding boxes. The image is in CHW format.
         The returned image is RGB.
-
         Args:
             i (int): The index of the example.
-
         Returns:
             tuple of an image and bounding boxes
-
         """
         id_ = self.ids[i]
         anno = ET.parse(
@@ -124,8 +115,9 @@ class VOCBboxDataset(Dataset):
 
         # if self.return_difficult:
         #     return img, bbox, label, difficult
-        img, bbox, label, scale = self.tsf((img, bbox, label))
-        return img.copy(), bbox.copy(), label.copy(), scale
+        return img, bbox, label, difficult
+
+    __getitem__ = get_example
 
 
 VOC_BBOX_LABEL_NAMES = (

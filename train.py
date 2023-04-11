@@ -11,49 +11,59 @@ from utils.config import opt
 
 #dataset
 from torch.utils.data import DataLoader
-from data.dataset import inverse_normalize,TestDataset
-from data.voc_dataset import VOCBboxDataset
-from data.kitti_dataset import KITTIDataset
+from data.dataset import inverse_normalize,TestDataset,Dataset
+# from data.voc_dataset import VOCBboxDataset
+#from data.kitti_dataset import KITTIDataset
 
 # model 
 from model import FasterRCNNVGG16
+from torchnet.meter import AverageValueMeter
+from model.faster_rcnn_vgg16 import LossTuple
 
 # utils
 from trainer import FasterRCNNTrainer
 from utils import array_tool as at
 from utils.vis_tool import visdom_bbox
-from utils.eval_tool import eval_detection_voc
-
-# fix for ulimit
-# https://github.com/pytorch/pytorch/issues/973#issuecomment-346405667
-import resource
-
-rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-resource.setrlimit(resource.RLIMIT_NOFILE, (20480, rlimit[1]))
-
-matplotlib.use('agg')
+from utils.eval_tool import eval_voc
 
 
-def eval(dataloader, faster_rcnn, test_num=10000):
-    pred_bboxes, pred_labels, pred_scores = list(), list(), list()
-    gt_bboxes, gt_labels, gt_difficults = list(), list(), list()
-    for ii, (imgs, sizes, gt_bboxes_, gt_labels_, gt_difficults_) in tqdm(enumerate(dataloader)):
-        sizes = [sizes[0][0].item(), sizes[1][0].item()]
-        pred_bboxes_, pred_labels_, pred_scores_ = faster_rcnn.predict(imgs, [sizes])
-        gt_bboxes += list(gt_bboxes_.numpy())
-        gt_labels += list(gt_labels_.numpy())
-        gt_difficults += list(gt_difficults_.numpy())
-        pred_bboxes += pred_bboxes_
-        pred_labels += pred_labels_
-        pred_scores += pred_scores_
-        if ii == test_num: break
+def update_meters(meters, losses):
+    loss_d = {k: at.scalar(v) for k, v in losses._asdict().items()}
+    for key, meter in meters.items():
+        meter.add(loss_d[key])
 
-    result = eval_detection_voc(
-        pred_bboxes, pred_labels, pred_scores,
-        gt_bboxes, gt_labels, gt_difficults,
-        use_07_metric=True)
-    return result
+def reset_meters(meters):
+    for _, meter in meters.items():
+        meter.reset()
 
+
+def get_meter_data(meters):
+    return {k: v.value()[0] for k, v in meters.items()}
+
+def save_model(model, model_name, epoch):
+    save_path = f'./checkpoints/{model_name}/{epoch}.pth'
+    save_dir = os.path.dirname(save_path)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    torch.save(model.state_dict(), save_path)
+
+def build_optimizer(net):
+    """
+    return optimizer, It could be overwriten if you want to specify 
+    special optimizer
+    """
+    lr = opt.lr
+    params = []
+    for key, value in dict(net.named_parameters()).items():
+        if value.requires_grad:
+            if 'bias' in key:
+                params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
+            else:
+                params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
+    if opt.use_adam:
+        return torch.optim.Adam(params)
+    else:
+        return torch.optim.SGD(params, momentum=0.9)
 
 def train(**kwargs):
 
@@ -64,9 +74,9 @@ def train(**kwargs):
     opt.f_parse_args(kwargs)
 
     # load training dataset 
-    dataset = VOCBboxDataset(opt)
+    dataset = Dataset(opt)
 
-    img, bbox, label, scale = dataset[1]
+    # img, bbox, label, scale = dataset[1]
     # print('bbox type: ',type(bbox))
     # print('bbox: ',bbox)
     # print('label: ', label)
@@ -87,77 +97,72 @@ def train(**kwargs):
                                  num_workers=opt.test_num_workers,
                                  pin_memory=True)
     
-    # construct model
-    faster_rcnn = FasterRCNNVGG16()
-    print('model construct completed')
-    trainer = FasterRCNNTrainer(faster_rcnn).to(device)
-    if opt.load_path:
-        trainer.load(opt.load_path)
-        print('load pretrained model from %s' % opt.load_path)
-    trainer.vis.text(dataset.db.label_names, win='labels')
-    best_map = 0
-    lr = opt.lr
+    print('data completed')
 
-    for epoch in range(opt.epoch):
-        trainer.reset_meters()
-        for idx, (img, bbox, label, scale) in tqdm(enumerate(dataloader)):
-            # send data to device
+    # model construction 
+    net = FasterRCNNVGG16().to(device)
+    print('model completed')
+
+    # optimizer construction
+    optimizer = build_optimizer(net)
+    print('optimizer completed')
+
+    # fitting 
+    meters = {k: AverageValueMeter() for k in LossTuple._fields}
+
+    best_mAP = 0
+    lr = opt.lr
+    for epoch in range(1, opt.epoch + 1):
+        # switch to train mode
+        net.train()
+        # reset meters
+        reset_meters(meters)
+        # train batch
+        for img, bbox, label, scale in tqdm(dataloader):
+            # prepare data
             scale = at.scalar(scale)
             img, bbox, label = img.to(device).float(), bbox.to(device), label.to(device)
 
-            # train one batch
-            trainer.train_step(img, bbox, label, scale)
-            
-            # visualization
-            if opt.visualize:
-                if (idx + 1) % opt.plot_every == 0:
-                    if os.path.exists(opt.debug_file):
-                        ipdb.set_trace()
-
-                    # plot loss
-                    trainer.vis.plot_many(trainer.get_meter_data())
-
-                    # plot groud truth bboxes
-                    ori_img = inverse_normalize(at.tonumpy(img[0]))
-                    gt_img = visdom_bbox(ori_img,
-                                        at.tonumpy(bbox[0]),
-                                        at.tonumpy(label[0]))
-                    trainer.vis.img('gt_img', gt_img)
-
-                    # plot predict bboxes
-                    pred_bboxes, pred_labels, pred_scores = trainer.faster_rcnn.predict([ori_img], visualize=True)
-                    pred_img = visdom_bbox(ori_img,
-                                        at.tonumpy(pred_bboxes[0]),
-                                        at.tonumpy(pred_labels[0]).reshape(-1),
-                                        at.tonumpy(pred_scores[0]))
-                    trainer.vis.img('pred_img', pred_img)
-
-                    # rpn confusion matrix(meter)
-                    trainer.vis.text(str(trainer.rpn_cm.value().tolist()), win='rpn_cm')
-                    # roi confusion matrix
-                    trainer.vis.img('roi_cm', at.totensor(trainer.roi_cm.conf, False).float())
+            # forward + backward
+            optimizer.zero_grad()
+            losses = net.forward(img, bbox, label, scale)
+            losses.total_loss.backward()
+            optimizer.step()
+            update_meters(meters, losses)
+        
+        # print loss
+        print('learning rate: ', lr)
+        loss_metadata = get_meter_data(meters)
+        rpn_loc_loss = loss_metadata['rpn_loc_loss']
+        rpn_cls_loss = loss_metadata['rpn_cls_loss']
+        roi_loc_loss = loss_metadata['roi_loc_loss']
+        roi_cls_loss = loss_metadata['roi_cls_loss']
+        print('epoch:{}, rpn_loc_loss:{}, rpn_cls_loss:{}, roi_loc_loss:{}, roi_cls_loss:{}'.format(epoch, rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss))
+        print(f'total_loss: {loss_metadata["total_loss"]:.4f}')
         
         # evaluate
-        eval_result = eval(test_dataloader, faster_rcnn, test_num=opt.test_num)
-        trainer.vis.plot('test_map', eval_result['map'])
-        lr = trainer.faster_rcnn.optimizer.param_groups[0]['lr']
-        print('lr:{}, mAP:{},loss:{}'.format(str(lr),
-                                                  str(eval_result['map']),
-                                                  str(trainer.get_meter_data())))
+        net.eval()
+        mAP = eval_voc(test_dataloader, net)
 
-        if eval_result['map'] > best_map:
-            best_map = eval_result['map']
-            best_path = trainer.save(best_map=best_map)
-        if epoch == 9:
-            trainer.load(best_path)
-            trainer.faster_rcnn.scale_lr(opt.lr_decay)
-            lr *= opt.lr_decay
-
-        if epoch == 13: 
-            break
+        # save model (if best model)
+        if mAP > best_mAP:
+            best_mAP = mAP
+            best_path = save_model(best_mAP, opt.model, epoch)
+        
+        # learning rate decay
+        if epoch == opt.epoch_decay:
+            # load best model
+            state_dict = torch.load(best_path)
+            net.load_state_dict(state_dict)
+            # learning rate decay
+            for param in optimizer.param_groups:
+                param['lr'] *= opt.lr_decay
+            lr = lr * opt.lr_decay
+    
+    # save final model
+    PATH = f'{opt.save_dir}/fasterrcnn_vgg16.pth'
+    torch.save(net.state_dict(), PATH)
 
 
 if __name__ == '__main__':
-    import fire
-    
-    fire.Fire()
+    train()
