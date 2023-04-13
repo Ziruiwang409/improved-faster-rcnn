@@ -9,8 +9,6 @@ class Config:
     # data
     dataset_choice = 'voc'  # choose one from 'voc', 'kitti', 'coco'
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
-    kitti_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'         # TODO: change path to kitti dataset   
-    coco_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'          # TODO: change path to coco dataset
     min_size = 600  # image resize
     max_size = 1000 # image resize
     num_workers = 8

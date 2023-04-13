@@ -1,8 +1,6 @@
 from __future__ import  absolute_import
 import os
 
-import ipdb
-import matplotlib
 from tqdm import tqdm
 import torch
 
@@ -139,7 +137,8 @@ def train(**kwargs):
         roi_cls_loss = loss_metadata['roi_cls_loss']
         print('epoch:{}, rpn_loc_loss:{}, rpn_cls_loss:{}, roi_loc_loss:{}, roi_cls_loss:{}'.format(epoch, rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss))
         print(f'total_loss: {loss_metadata["total_loss"]:.4f}')
-        
+
+    
         # evaluate
         net.eval()
         mAP = eval_voc(test_dataloader, net)

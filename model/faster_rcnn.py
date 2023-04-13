@@ -1,23 +1,27 @@
-from __future__ import  absolute_import
-from __future__ import division
+
+# Pytorch packages
 import torch as t
+from torch import nn
+from torch.nn import functional as F
+from torchvision.ops import nms
+
+# Python packages
 import numpy as np
+from collections import namedtuple
+
+# Util packages
 from utils import array_tool as at
 from model.utils.bbox_tools import loc2bbox
-from torchvision.ops import nms
-# from model.utils.nms import non_maximum_suppression
-
-from torch import nn
-from data.dataset import preprocess
-from torch.nn import functional as F
 from utils.config import opt
 
-
-def nograd(f):
-    def new_f(*args,**kwargs):
-        with t.no_grad():
-           return f(*args,**kwargs)
-    return new_f
+# Loss Tuple
+LossTuple = namedtuple('LossTuple',
+                       ['rpn_loc_loss',
+                        'rpn_cls_loss',
+                        'roi_loc_loss',
+                        'roi_cls_loss',
+                        'total_loss'
+                        ])
 
 class FasterRCNN(nn.Module):
     """Base class for Faster R-CNN.
@@ -68,26 +72,32 @@ class FasterRCNN(nn.Module):
 
     """
 
-    def __init__(self, extractor, rpn, head,
-                loc_normalize_mean = (0., 0., 0., 0.),
-                loc_normalize_std = (0.1, 0.1, 0.2, 0.2)
-    ):
+    def __init__(self, extractor, rpn, predictor, n_classes, loc, score,
+                 spatial_scale, pooling_size, roi_sigma):
         super(FasterRCNN, self).__init__()
+        # architecture parameters
         self.extractor = extractor
         self.rpn = rpn
-        self.head = head
+        self.predictor = predictor
 
-        # mean and std
+        # hyper parameters
+        self.n_classes = n_classes
+        self.loc = loc
+        self.score = score
+
+        # hyper parameters for roi pooling
+        self.spatial_scale = spatial_scale
+        self.pooling_size = pooling_size
+        self.roi_sigma = roi_sigma
+
+        # hyper parameters for evaluation
         self.loc_normalize_mean = (0., 0., 0., 0.)
         self.loc_normalize_std = (0.1, 0.1, 0.2, 0.2)
-        self.use_preset('evaluate')
+        self.nms_thresh = opt.nms_thresh        # threshold for non maximum suppression on bbox
+        self.score_thresh = opt.score_thresh    # threshold for bbox score
+        
 
-    @property
-    def n_class(self):
-        # Total number of classes including the background.
-        return self.head.n_class
-
-    def forward(self, x, scale=1.):
+    def forward(self, x, scale,gt_bboxes, gt_labels, ori_size=None):
         """Forward Faster R-CNN.
 
         Scaling paramter :obj:`scale` is used by RPN to determine the
@@ -124,42 +134,85 @@ class FasterRCNN(nn.Module):
                 :math:`(R',)`.
 
         """
-        img_size = x.shape[2:]
+        # train
+        if self.training:             # (nn.Module parameters training)
 
-        h = self.extractor(x)
-        rpn_locs, rpn_scores, rois, roi_indices, anchor = \
-            self.rpn(h, img_size, scale)
-        roi_cls_locs, roi_scores = self.head(
-            h, rois, roi_indices)
-        return roi_cls_locs, roi_scores, rois, roi_indices
+            # feature extraction (Backbone CNN: VGG16)
+            feature = self.feature_extraction_module(x)
 
-    def use_preset(self, preset):
-        """Use the given preset during prediction.
+            # RPN (NOTE: FPN based Region Proposal Network)
+            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, x.shape[2:], scale, gt_bboxes[0], gt_labels[0])
 
-        This method changes values of :obj:`self.nms_thresh` and
-        :obj:`self.score_thresh`. These values are a threshold value
-        used for non maximum suppression and a threshold value
-        to discard low confidence proposals in :meth:`predict`,
-        respectively.
+            # RoI pooling 
+            roi_pool_feature = self.roi_pooling_module(feature, roi)
 
-        If the attributes need to be changed to something
-        other than the values provided in the presets, please modify
-        them by directly accessing the public attributes.
+            # Bounding Box regression and classification
+            roi_loc, roi_score = self.bbox_regression_and_classification_module(roi_pool_feature)
 
-        Args:
-            preset ({'visualize', 'evaluate'): A string to determine the
-                preset to use.
+            # Calculate losses
+            n_sample = roi_loc.shape[0]
+            roi_loc = roi_loc.view(n_sample, -1, 4)
+            roi_loc = roi_loc[t.arange(0, n_sample).long().cuda(),
+                              at.totensor(gt_roi_label).long()]
 
-        """
-        if preset == 'visualize':
-            self.nms_thresh = 0.3
-            self.score_thresh = 0.7
-        elif preset == 'evaluate':
-            self.nms_thresh = 0.3
-            self.score_thresh = 0.05
-        else:
-            raise ValueError('preset must be visualize or evaluate')
-    
+            gt_roi_loc = at.totensor(gt_roi_loc)
+            gt_roi_label = at.totensor(gt_roi_label).long()
+
+            roi_loc_loss = bbox_regression_loss(roi_loc.contiguous(),
+                                                gt_roi_loc,
+                                                gt_roi_label.data,
+                                                self.roi_sigma)
+
+            roi_cls_loss = F.cross_entropy(roi_score, gt_roi_label.cuda())
+
+            losses = [rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss]
+            losses = losses + [sum(losses)]
+
+            return LossTuple(*losses)
+        else:   # test
+            x = at.totensor(x).float()
+
+            # feature extraction (Backbone CNN: VGG16)
+            feature = self.feature_extraction_module(x)
+
+            # RPN (NOTE: FPN based Region Proposal Network)
+            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, x.shape[2:], scale, None, None)
+
+            # RoI pooling 
+            roi_pool_feature = self.roi_pooling_module(feature, roi)
+
+            # Bounding Box regression and classification
+            roi_loc, roi_score = self.bbox_regression_and_classification_module(roi_pool_feature)
+
+            # We are assuming that batch size is 1.
+            roi_score = roi_score.data
+            roi_cls_loc = roi_cls_loc.data
+            roi = at.totensor(roi) / scale
+
+            # Convert predictions to bounding boxes in image coordinates.
+            # Bounding boxes are scaled to the scale of the input images.
+            mean = t.Tensor(self.loc_normalize_mean).cuda().repeat(self.n_class)[None]
+            std = t.Tensor(self.loc_normalize_std).cuda().repeat(self.n_class)[None]
+
+            roi_cls_loc = (roi_cls_loc * std + mean)
+            roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
+            roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
+            cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
+                                at.tonumpy(roi_cls_loc).reshape((-1, 4)))
+            cls_bbox = at.totensor(cls_bbox)
+            cls_bbox = cls_bbox.view(-1, self.n_class * 4)
+
+            # clip bounding box
+            cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=ori_size[0])
+            cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=ori_size[1])
+
+            prob = (F.softmax(at.totensor(roi_score), dim=1))
+
+            bbox, label, score = self._suppress(cls_bbox, prob)
+
+            return bbox, label, score
+
+
     # NOTE: Override in the child class (improved_faster_rcnn.py)
     def feature_extraction_module(self, x):
         raise NotImplementedError
@@ -195,92 +248,7 @@ class FasterRCNN(nn.Module):
         score = np.concatenate(score, axis=0).astype(np.float32)
         return bbox, label, score
 
-    @nograd
-    def predict(self, imgs,sizes=None,visualize=False):
-        """Detect objects from images.
-
-        This method predicts objects for each image.
-
-        Args:
-            imgs (iterable of numpy.ndarray): Arrays holding images.
-                All images are in CHW and RGB format
-                and the range of their value is :math:`[0, 255]`.
-
-        Returns:
-           tuple of lists:
-           This method returns a tuple of three lists,
-           :obj:`(bboxes, labels, scores)`.
-
-           * **bboxes**: A list of float arrays of shape :math:`(R, 4)`, \
-               where :math:`R` is the number of bounding boxes in a image. \
-               Each bouding box is organized by \
-               :math:`(y_{min}, x_{min}, y_{max}, x_{max})` \
-               in the second axis.
-           * **labels** : A list of integer arrays of shape :math:`(R,)`. \
-               Each value indicates the class of the bounding box. \
-               Values are in range :math:`[0, L - 1]`, where :math:`L` is the \
-               number of the foreground classes.
-           * **scores** : A list of float arrays of shape :math:`(R,)`. \
-               Each value indicates how confident the prediction is.
-
-        """
-        with t.no_grad():
-            self.eval()
-            if visualize:
-                self.use_preset('visualize')
-                prepared_imgs = list()
-                sizes = list()
-                for img in imgs:
-                    size = img.shape[1:]
-                    img = preprocess(at.tonumpy(img))
-                    prepared_imgs.append(img)
-                    sizes.append(size)
-            else:
-                prepared_imgs = imgs 
-            bboxes = list()
-            labels = list()
-            scores = list()
-            for img, size in zip(prepared_imgs, sizes):
-                img = at.totensor(img[None]).float()
-                scale = img.shape[3] / size[1]
-                roi_cls_loc, roi_scores, rois, _ = self(img, scale=scale)
-                # We are assuming that batch size is 1.
-                roi_score = roi_scores.data
-                roi_cls_loc = roi_cls_loc.data
-                roi = at.totensor(rois) / scale
-
-                # Convert predictions to bounding boxes in image coordinates.
-                # Bounding boxes are scaled to the scale of the input images.
-                mean = t.Tensor(self.loc_normalize_mean).cuda(). \
-                    repeat(self.n_class)[None]
-                std = t.Tensor(self.loc_normalize_std).cuda(). \
-                    repeat(self.n_class)[None]
-
-                roi_cls_loc = (roi_cls_loc * std + mean)
-                roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
-                roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
-                cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
-                                    at.tonumpy(roi_cls_loc).reshape((-1, 4)))
-                cls_bbox = at.totensor(cls_bbox)
-                cls_bbox = cls_bbox.view(-1, self.n_class * 4)
-                # clip bounding box
-                cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=size[0])
-                cls_bbox[:, 1::2] = (cls_bbox[:, 1::2]).clamp(min=0, max=size[1])
-
-                prob = (F.softmax(at.totensor(roi_score), dim=1))
-
-                bbox, label, score = self._suppress(cls_bbox, prob)
-                bboxes.append(bbox)
-                labels.append(label)
-                scores.append(score)
-
-            self.use_preset('evaluate')
-            self.train()
-            return bboxes, labels, scores
-
-
     
-
 def smooth_l1_loss(x, t, in_weight, sigma):
     sigma2 = sigma ** 2
     diff = in_weight * (x - t)

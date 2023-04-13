@@ -4,17 +4,40 @@ from torchvision.ops import nms
 from model.utils.bbox_tools import bbox2loc, bbox_iou, loc2bbox
 
 
-class ProposalTargetCreator(object):
-    """Assign ground truth bounding boxes to given RoIs.
+def _unmap(data, count, index, fill=0):
+    # Unmap a subset of item (data) back to the original set of items (of
+    # size count)
 
+    if len(data.shape) == 1:
+        ret = np.empty((count,), dtype=data.dtype)
+        ret.fill(fill)
+        ret[index] = data
+    else:
+        ret = np.empty((count,) + data.shape[1:], dtype=data.dtype)
+        ret.fill(fill)
+        ret[index, :] = data
+    return ret
+
+
+def _get_inside_index(anchor, H, W):
+    # Calc indicies of anchors which are located completely inside of the image
+    # whose size is speficied.
+    index_inside = np.where(
+        (anchor[:, 0] >= 0) &
+        (anchor[:, 1] >= 0) &
+        (anchor[:, 2] <= H) &
+        (anchor[:, 3] <= W)
+    )[0]
+    return index_inside
+
+class SampleTargetProposal(object):
+    """Assign ground truth bounding boxes to given RoIs.
     The :meth:`__call__` of this class generates training targets
     for each object proposal.
     This is used to train Faster RCNN [#]_.
-
     .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
-
     Args:
         n_sample (int): The number of sampled regions.
         pos_ratio (float): Fraction of regions that is labeled as a
@@ -25,7 +48,6 @@ class ProposalTargetCreator(object):
             if IoU is in
             [:obj:`neg_iou_thresh_hi`, :obj:`neg_iou_thresh_hi`).
         neg_iou_thresh_lo (float): See above.
-
     """
 
     def __init__(self,
@@ -43,25 +65,20 @@ class ProposalTargetCreator(object):
                  loc_normalize_mean=(0., 0., 0., 0.),
                  loc_normalize_std=(0.1, 0.1, 0.2, 0.2)):
         """Assigns ground truth to sampled proposals.
-
         This function samples total of :obj:`self.n_sample` RoIs
         from the combination of :obj:`roi` and :obj:`bbox`.
         The RoIs are assigned with the ground truth class labels as well as
         bounding box offsets and scales to match the ground truth bounding
         boxes. As many as :obj:`pos_ratio * self.n_sample` RoIs are
         sampled as foregrounds.
-
         Offsets and scales of bounding boxes are calculated using
         :func:`model.utils.bbox_tools.bbox2loc`.
         Also, types of input arrays and output arrays are same.
-
         Here are notations.
-
         * :math:`S` is the total number of sampled RoIs, which equals \
             :obj:`self.n_sample`.
         * :math:`L` is number of object classes possibly including the \
             background.
-
         Args:
             roi (array): Region of Interests (RoIs) from which we sample.
                 Its shape is :math:`(R, 4)`
@@ -74,10 +91,8 @@ class ProposalTargetCreator(object):
                 coordinates of bouding boxes.
             loc_normalize_std (tupler of four floats): Standard deviation of
                 the coordinates of bounding boxes.
-
         Returns:
             (array, array, array):
-
             * **sample_roi**: Regions of interests that are sampled. \
                 Its shape is :math:`(S, 4)`.
             * **gt_roi_loc**: Offsets and scales to match \
@@ -86,7 +101,6 @@ class ProposalTargetCreator(object):
             * **gt_roi_label**: Labels assigned to sampled RoIs. Its shape is \
                 :math:`(S,)`. Its range is :math:`[0, L]`. The label with \
                 value 0 is the background.
-
         """
         n_bbox, _ = bbox.shape
 
@@ -132,20 +146,16 @@ class ProposalTargetCreator(object):
         return sample_roi, gt_roi_loc, gt_roi_label
 
 
-class AnchorTargetCreator(object):
+class SampleTargetAnchor(object):
     """Assign the ground truth bounding boxes to anchors.
-
     Assigns the ground truth bounding boxes to anchors for training Region
     Proposal Networks introduced in Faster R-CNN [#]_.
-
     Offsets and scales to match anchors to the ground truth are
     calculated using the encoding scheme of
     :func:`model.utils.bbox_tools.bbox2loc`.
-
     .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
-
     Args:
         n_sample (int): The number of regions to produce.
         pos_iou_thresh (float): Anchors with IoU above this
@@ -154,7 +164,6 @@ class AnchorTargetCreator(object):
             threshold will be assigned as negative.
         pos_ratio (float): Ratio of positive regions in the
             sampled regions.
-
     """
 
     def __init__(self,
@@ -168,14 +177,10 @@ class AnchorTargetCreator(object):
 
     def __call__(self, bbox, anchor, img_size):
         """Assign ground truth supervision to sampled subset of anchors.
-
         Types of input arrays and output arrays are same.
-
         Here are notations.
-
         * :math:`S` is the number of anchors.
         * :math:`R` is the number of bounding boxes.
-
         Args:
             bbox (array): Coordinates of bounding boxes. Its shape is
                 :math:`(R, 4)`.
@@ -183,17 +188,14 @@ class AnchorTargetCreator(object):
                 :math:`(S, 4)`.
             img_size (tuple of ints): A tuple :obj:`H, W`, which
                 is a tuple of height and width of an image.
-
         Returns:
             (array, array):
-
             #NOTE: it's scale not only  offset
             * **loc**: Offsets and scales to match the anchors to \
                 the ground truth bounding boxes. Its shape is :math:`(S, 4)`.
             * **label**: Labels of anchors with values \
                 :obj:`(1=positive, 0=negative, -1=ignore)`. Its shape \
                 is :math:`(S,)`.
-
         """
 
         img_H, img_W = img_size
@@ -260,55 +262,24 @@ class AnchorTargetCreator(object):
         return argmax_ious, max_ious, gt_argmax_ious
 
 
-def _unmap(data, count, index, fill=0):
-    # Unmap a subset of item (data) back to the original set of items (of
-    # size count)
 
-    if len(data.shape) == 1:
-        ret = np.empty((count,), dtype=data.dtype)
-        ret.fill(fill)
-        ret[index] = data
-    else:
-        ret = np.empty((count,) + data.shape[1:], dtype=data.dtype)
-        ret.fill(fill)
-        ret[index, :] = data
-    return ret
-
-
-def _get_inside_index(anchor, H, W):
-    # Calc indicies of anchors which are located completely inside of the image
-    # whose size is speficied.
-    index_inside = np.where(
-        (anchor[:, 0] >= 0) &
-        (anchor[:, 1] >= 0) &
-        (anchor[:, 2] <= H) &
-        (anchor[:, 3] <= W)
-    )[0]
-    return index_inside
-
-
-class ProposalCreator:
+class GenerateProposals:
     # unNOTE: I'll make it undifferential
     # unTODO: make sure it's ok
     # It's ok
     """Proposal regions are generated by calling this object.
-
     The :meth:`__call__` of this object outputs object detection proposals by
     applying estimated bounding box offsets
     to a set of anchors.
-
     This class takes parameters to control number of bounding boxes to
     pass to NMS and keep after NMS.
     If the paramters are negative, it uses all the bounding boxes supplied
     or keep all the bounding boxes returned by NMS.
-
     This class is used for Region Proposal Networks introduced in
     Faster R-CNN [#]_.
-
     .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
     Faster R-CNN: Towards Real-Time Object Detection with \
     Region Proposal Networks. NIPS 2015.
-
     Args:
         nms_thresh (float): Threshold value used when calling NMS.
         n_train_pre_nms (int): Number of top scored bounding boxes
@@ -324,7 +295,6 @@ class ProposalCreator:
             the NMS mode is selected based on the type of inputs.
         min_size (int): A paramter to determine the threshold on
             discarding bounding boxes based on their sizes.
-
     """
 
     def __init__(self,
@@ -348,16 +318,12 @@ class ProposalCreator:
                  anchor, img_size, scale=1.):
         """input should  be ndarray
         Propose RoIs.
-
         Inputs :obj:`loc, score, anchor` refer to the same anchor when indexed
         by the same index.
-
         On notations, :math:`R` is the total number of anchors. This is equal
         to product of the height and the width of an image and the number of
         anchor bases per pixel.
-
         Type of the output is same as the inputs.
-
         Args:
             loc (array): Predicted offsets and scaling to anchors.
                 Its shape is :math:`(R, 4)`.
@@ -369,7 +335,6 @@ class ProposalCreator:
                 which contains image size after scaling.
             scale (float): The scaling factor used to scale an image after
                 reading it from a file.
-
         Returns:
             array:
             An array of coordinates of proposal boxes.
@@ -378,7 +343,6 @@ class ProposalCreator:
             :obj:`self.n_train_post_nms` in train time. :math:`S` depends on
             the size of the predicted bounding boxes and the number of
             bounding boxes discarded by NMS.
-
         """
         # NOTE: when test, remember
         # faster_rcnn.eval()
@@ -429,3 +393,4 @@ class ProposalCreator:
             keep = keep[:n_post_nms]
         roi = roi[keep.cpu().numpy()]
         return roi
+    
