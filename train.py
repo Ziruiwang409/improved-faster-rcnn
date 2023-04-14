@@ -16,10 +16,9 @@ from data.dataset import inverse_normalize,TestDataset,Dataset
 # model 
 from model import FasterRCNNVGG16
 from torchnet.meter import AverageValueMeter
-from model.faster_rcnn_vgg16 import LossTuple
+from model.faster_rcnn import LossTuple
 
 # utils
-from trainer import FasterRCNNTrainer
 from utils import array_tool as at
 from utils.vis_tool import visdom_bbox
 from utils.eval_tool import eval_voc
@@ -74,26 +73,22 @@ def train(**kwargs):
     # load training dataset 
     dataset = Dataset(opt)
 
-    # img, bbox, label, scale = dataset[1]
-    # print('bbox type: ',type(bbox))
+    # img, bbox, label, scale = dataset[1000]
     # print('bbox: ',bbox)
     # print('label: ', label)
-    # print('label type: ', type(label))
     # print('scale: ',scale)
     # print('load data')
-    dataloader = DataLoader(dataset, 
+    train_dataloader = DataLoader(dataset, 
                             batch_size=1, 
                             shuffle=True,
-                            num_workers=opt.num_workers,
-                            pin_memory=True)
+                            num_workers=opt.num_workers)
         
     # # load testing dataset
     testset = TestDataset(opt)
     test_dataloader = DataLoader(testset,
                                  batch_size=1,
                                  shuffle=False, 
-                                 num_workers=opt.test_num_workers,
-                                 pin_memory=True)
+                                 num_workers=opt.test_num_workers)
     
     print('data completed')
 
@@ -116,31 +111,36 @@ def train(**kwargs):
         # reset meters
         reset_meters(meters)
         # train batch
-        for img, bbox, label, scale in tqdm(dataloader):
+        for img, bboxes, labels, scale in tqdm(train_dataloader):
             # prepare data
             scale = at.scalar(scale)
-            img, bbox, label = img.to(device).float(), bbox.to(device), label.to(device)
-
+            img, bboxes, labels = img.to(device).float(), bboxes.to(device), labels.to(device)
             # forward + backward
             optimizer.zero_grad()
-            losses = net.forward(img, bbox, label, scale)
+            losses = net.forward(img,bboxes, labels, scale)
             losses.total_loss.backward()
             optimizer.step()
             update_meters(meters, losses)
         
         # print loss
-        print('learning rate: ', lr)
         loss_metadata = get_meter_data(meters)
         rpn_loc_loss = loss_metadata['rpn_loc_loss']
         rpn_cls_loss = loss_metadata['rpn_cls_loss']
         roi_loc_loss = loss_metadata['roi_loc_loss']
         roi_cls_loss = loss_metadata['roi_cls_loss']
-        print('epoch:{}, rpn_loc_loss:{}, rpn_cls_loss:{}, roi_loc_loss:{}, roi_cls_loss:{}'.format(epoch, rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss))
-        print(f'total_loss: {loss_metadata["total_loss"]:.4f}')
+        total_loss = loss_metadata['total_loss']
+        print('epoch #{}: lr=={} | rpn_loc_loss=={:.4f} | rpn_cls_loss=={:.4f} | roi_loc_loss=={:.4f} | roi_cls_loss=={:.4f} | total_loss=={:.4f}'.format(epoch,
+                                                                                                                                                          lr, 
+                                                                                                                                                          rpn_loc_loss, 
+                                                                                                                                                          rpn_cls_loss, 
+                                                                                                                                                          roi_loc_loss, 
+                                                                                                                                                          roi_cls_loss,
+                                                                                                                                                          total_loss))
 
     
         # evaluate
         net.eval()
+        
         mAP = eval_voc(test_dataloader, net)
 
         # save model (if best model)

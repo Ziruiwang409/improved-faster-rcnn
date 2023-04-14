@@ -41,13 +41,13 @@ class FasterRCNNVGG16(FasterRCNN):
                             rpn_conv=nn.Conv2d(256, 512, 3, 1, 1),
                             rpn_loc=nn.Conv2d(512, 3 * 4, 1, 1),
                             rpn_score=nn.Conv2d(512, 3 * 2, 1, 1)),
-            predictor=nn.Sequential(nn.Linear(7 * 7 * 256 * opt.n_features, 1024),
+            predictor=nn.Sequential(nn.Linear(7 * 7 * 256, 1024),
                                     nn.ReLU(True),
                                     nn.Linear(1024, 1024),
                                     nn.ReLU(True)),  # feature pooling and prediction 
             loc=nn.Linear(1024, (n_fg_class + 1) * 4),
             score=nn.Linear(1024, n_fg_class + 1),
-            spatial_scale=[1/4., 1/8., 1/16., 1/32.],
+            spatial_scale=[1/4.,1/8.,1/16.,1/32.],
             pooling_size=7,
             roi_sigma=opt.roi_sigma)
         normal_init(self.predictor[0], 0, 0.01)
@@ -104,49 +104,24 @@ class FasterRCNNVGG16(FasterRCNN):
 
         return [p2, p3, p4, p5]
     
-    # NOTE: Helper function for deciding the feature level of each RoI
-    def assign_feature_level(roi, n_features, k0, low, high):
-        h = roi.data[:, 2] - roi.data[:, 0] + 1
-        w = roi.data[:, 3] - roi.data[:, 1] + 1
-        # get feature level based on formula: 
-        k = t.log2(t.sqrt(h * w) / 224.) + k0
-
-        # get lower & upper limit of feature levels
-        if n_features == 1:
-            level = t.round(level)
-            level[level < low] = low
-            level[level > high] = high
-        elif n_features == 2:
-            l1, l2, l3 = low, low + 1, low + 2
-            level[level < l2] = l1
-            level[(level >= l2) & (level < l3)] = l2
-            level[level >= l3] = l3
-        elif n_features == 3:
-            limit = (low + high) / 2.
-            level[level < limit] = low
-            level[level >= limit] = low + 1
-        else:
-            raise NotImplementedError('Not implemented yet.')
-
-        return level
     # NOTE: inherent from FasterRCNN Class
-    def roi_pooling_module(self, features, roi):
+    def roi_pooling_module(self, feature, roi):
         roi = at.totensor(roi).float()
         # n_features -> the number of features to use for RoI-Pooling
         #               not that of all features
 
-        n_features = self.n_features
+        # n_features = self.n_features
         # compute the lowest & highest level
-        low = self.k0 - 2
-        high = self.k0 + 1
+        low = 2
+        high = 5
         # compute feature level
-        k = self.assign_feature_level(roi, n_features, self.k0, low, high)
+        k = assign_feature_level(roi, self.k0, low, high)
         # possible starting level
         starting_lv = t.arange(low, high + 1)
-        if n_features == 2:
-            starting_lv = starting_lv[:-1]
-        elif n_features == 3:
-            starting_lv = starting_lv[:-2]
+        # if n_features == 2:
+        #     starting_lv = starting_lv[:-1]
+        # elif n_features == 3:
+        #     starting_lv = starting_lv[:-2]
         # perform RoI-Pooling
         pooled_feats = []
         box_to_levels = []
@@ -157,25 +132,19 @@ class FasterRCNNVGG16(FasterRCNN):
             level_idx = t.where(k == l)[0]
             box_to_levels.append(level_idx)
 
-            index_and_roi = t.cat(
-                [t.zeros(level_idx.size(0), 1).cuda(), roi[level_idx]],
-                dim=1
-            )
+            index_and_roi = t.cat([t.zeros(level_idx.size(0), 1).cuda(), roi[level_idx]],dim=1)
             # yx -> xy
             index_and_roi = index_and_roi[:, [0, 2, 1, 4, 3]].contiguous()
 
-            pooled_feats_l = []
-            for j in range(i, i + n_features):
-                feat = tv.ops.roi_pool(
-                    features[j],
-                    index_and_roi,
-                    self.pooling_size,
-                    self.spatial_scale[j]
-                )
-                # feat -> n_roi_lx256x7x7
-                pooled_feats_l.append(feat)
+            # pooled_feats_l = []
+            # for j in range(i, i + n_features):
+            pooled_feat = tv.ops.roi_pool(feature[i],
+                                   index_and_roi,
+                                   self.pooling_size,
+                                   self.spatial_scale[i])
+            # feat -> n_roi_lx256x7x7
 
-            pooled_feats.append(t.cat(pooled_feats_l, dim=1))
+            pooled_feats.append(pooled_feat)
 
         pooled_feats = t.cat(pooled_feats, dim=0)
         box_to_level = t.cat(box_to_levels, dim=0)
@@ -198,6 +167,30 @@ class FasterRCNNVGG16(FasterRCNN):
 
         return roi_loc, roi_score
 
+# NOTE: Helper function for deciding the feature level of each RoI
+def assign_feature_level(roi, k0, low, high):
+    h = roi.data[:, 2] - roi.data[:, 0] + 1
+    w = roi.data[:, 3] - roi.data[:, 1] + 1
+    # get feature level based on formula: 
+    k = t.log2(t.sqrt(h * w) / 224.) + k0
+
+    # get lower & upper limit of feature levels
+   # if n_features == 1:
+    k = t.round(k)
+    k[k < low] = low
+    k[k > high] = high
+    # elif n_features == 2:
+    #     l1, l2, l3 = low, low + 1, low + 2
+    #     level[level < l2] = l1
+    #     level[(level >= l2) & (level < l3)] = l2
+    #     level[level >= l3] = l3
+    # elif n_features == 3:
+    #     limit = (low + high) / 2.
+    #     level[level < limit] = low
+    #     level[level >= limit] = low + 1
+    # else:
+    #     raise NotImplementedError('Not implemented yet.')
+    return k
 
 def normal_init(m, mean, stddev, truncated=False):
     """

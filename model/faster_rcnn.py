@@ -97,7 +97,7 @@ class FasterRCNN(nn.Module):
         self.score_thresh = opt.score_thresh    # threshold for bbox score
         
 
-    def forward(self, x, scale,gt_bboxes, gt_labels, ori_size=None):
+    def forward(self, x, gt_bboxes, gt_labels, scale, ori_size=None):
         """Forward Faster R-CNN.
 
         Scaling paramter :obj:`scale` is used by RPN to determine the
@@ -136,12 +136,13 @@ class FasterRCNN(nn.Module):
         """
         # train
         if self.training:             # (nn.Module parameters training)
-
+            img_size = tuple(x.shape[2:])
             # feature extraction (Backbone CNN: VGG16)
-            feature = self.feature_extraction_module(x)
-
+            feature = self.feature_extraction_module(x)     # type: list of torch.Tensor
+            # print("gt_bboxes:", gt_bboxes)
+            # print("gt_labels:", gt_labels)
             # RPN (NOTE: FPN based Region Proposal Network)
-            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, x.shape[2:], scale, gt_bboxes[0], gt_labels[0])
+            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, img_size, scale, gt_bboxes[0], gt_labels[0])
 
             # RoI pooling 
             roi_pool_feature = self.roi_pooling_module(feature, roi)

@@ -5,10 +5,10 @@ from torch.nn import functional as F
 # Model Utils
 from model.utils.bbox_tools import generate_anchors_fpn
 from model.utils.proposal_tools import GenerateProposals, SampleTargetAnchor, SampleTargetProposal
-import model.utils.array_tool as at
 
 # Other Utils
 from utils.config import opt
+import utils.array_tool as at
 
 
 class RegionProposalNetwork(nn.Module):

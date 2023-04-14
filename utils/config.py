@@ -6,6 +6,8 @@ from pprint import pprint
 # e.g. --voc-data-dir='./data/'
 
 class Config:
+
+    n_features = 1
     # data
     dataset_choice = 'voc'  # choose one from 'voc', 'kitti', 'coco'
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
@@ -13,6 +15,9 @@ class Config:
     max_size = 1000 # image resize
     num_workers = 8
     test_num_workers = 8
+
+    nms_thresh = 0.3
+    score_thresh = 0.05
 
     # sigma for l1_smooth_loss
     rpn_sigma = 3.
@@ -24,12 +29,6 @@ class Config:
     lr_decay = 0.1  # 1e-3 -> 1e-4
     lr = 1e-3
 
-
-    # visualization
-    visualize = False
-    env = 'faster-rcnn'  # visdom env
-    port = 8097
-    plot_every = 40  # vis every N iter
 
     # preset
     data = 'voc'
