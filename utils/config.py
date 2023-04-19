@@ -7,13 +7,12 @@ from pprint import pprint
 
 class Config:
 
-    n_features = 1
-    # data
+    # dataset params
     dataset_choice = 'voc'  # choose one from 'voc', 'kitti', 'coco'
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     min_size = 600  # image resize
     max_size = 1000 # image resize
-    num_workers = 8
+    train_num_workers = 8
     test_num_workers = 8
 
     nms_thresh = 0.3
@@ -26,8 +25,8 @@ class Config:
     # param for optimizer
     # 0.0005 in origin paper but 0.0001 in tf-faster-rcnn
     weight_decay = 0.0005
-    lr_decay = 0.1  # 1e-3 -> 1e-4
     lr = 1e-3
+    lr_decay = 0.1
 
 
     # preset

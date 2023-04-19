@@ -16,12 +16,11 @@ from data.dataset import inverse_normalize,TestDataset,Dataset
 # model 
 from model import FasterRCNNVGG16
 from torchnet.meter import AverageValueMeter
-from model.faster_rcnn import LossTuple
+from model.faster_rcnn import Losses
 
 # utils
 from utils import array_tool as at
-from utils.vis_tool import visdom_bbox
-from utils.eval_tool import eval_voc
+from utils.eval_tool import evaluate
 
 
 def update_meters(meters, losses):
@@ -81,7 +80,7 @@ def train(**kwargs):
     train_dataloader = DataLoader(dataset, 
                             batch_size=1, 
                             shuffle=True,
-                            num_workers=opt.num_workers)
+                            num_workers=opt.train_num_workers)
         
     # # load testing dataset
     testset = TestDataset(opt)
@@ -101,7 +100,7 @@ def train(**kwargs):
     print('optimizer completed')
 
     # fitting 
-    meters = {k: AverageValueMeter() for k in LossTuple._fields}
+    meters = {k: AverageValueMeter() for k in Losses._fields}
 
     best_mAP = 0
     lr = opt.lr
@@ -141,7 +140,7 @@ def train(**kwargs):
         # evaluate
         net.eval()
         
-        mAP = eval_voc(test_dataloader, net)
+        mAP = evaluate(net, test_dataloader, device=device, dataset=testset)
 
         # save model (if best model)
         if mAP > best_mAP:

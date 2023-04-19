@@ -15,7 +15,7 @@ from model.utils.bbox_tools import loc2bbox
 from utils.config import opt
 
 # Loss Tuple
-LossTuple = namedtuple('LossTuple',
+Losses = namedtuple('Losses',
                        ['rpn_loc_loss',
                         'rpn_cls_loss',
                         'roi_loc_loss',
@@ -169,7 +169,7 @@ class FasterRCNN(nn.Module):
             losses = [rpn_loc_loss, rpn_cls_loss, roi_loc_loss, roi_cls_loss]
             losses = losses + [sum(losses)]
 
-            return LossTuple(*losses)
+            return Losses(*losses)
         else:   # test
             x = at.totensor(x).float()
 
