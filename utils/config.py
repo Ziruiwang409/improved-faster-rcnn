@@ -8,7 +8,7 @@ from pprint import pprint
 class Config:
 
     # dataset params
-    dataset_choice = 'voc'  # choose one from 'voc', 'kitti', 'coco'
+    database = 'VOC'  # choose one from 'voc', 'kitti', 'coco'
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     min_size = 600  # image resize
     max_size = 1000 # image resize
@@ -30,7 +30,6 @@ class Config:
 
 
     # preset
-    data = 'voc'
     pretrained_model = 'vgg16'
 
     # training

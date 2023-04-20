@@ -29,12 +29,12 @@ class FasterRCNN(nn.Module):
     This is a base class for Faster R-CNN links supporting object detection
     API [#]_. The following three stages constitute Faster R-CNN.
 
-    1. **Feature extraction**: Images are taken and their \
+    1. **Feature extraction**: Images are taken and their 
         feature maps are calculated.
-    2. **Region Proposal Networks**: Given the feature maps calculated in \
+    2. **Region Proposal Networks**: Given the feature maps calculated in 
         the previous stage, produce set of RoIs around objects.
-    3. **Localization and Classification Heads**: Using feature maps that \
-        belong to the proposed RoIs, classify the categories of the objects \
+    3. **Localization and Classification Heads**: Using feature maps that 
+        belong to the proposed RoIs, classify the categories of the objects 
         in the RoIs and improve localizations.
 
     Each stage is carried out by one of the callable
@@ -52,8 +52,8 @@ class FasterRCNN(nn.Module):
     the same interface. Please refer to :meth:`predict` for
     further details.
 
-    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. \
-    Faster R-CNN: Towards Real-Time Object Detection with \
+    .. [#] Shaoqing Ren, Kaiming He, Ross Girshick, Jian Sun. 
+    Faster R-CNN: Towards Real-Time Object Detection with 
     Region Proposal Networks. NIPS 2015.
 
     Args:
@@ -172,12 +172,13 @@ class FasterRCNN(nn.Module):
             return Losses(*losses)
         else:   # test
             x = at.totensor(x).float()
+            img_size = tuple(x.shape[2:])
 
             # feature extraction (Backbone CNN: VGG16)
             feature = self.feature_extraction_module(x)
 
             # RPN (NOTE: FPN based Region Proposal Network)
-            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, x.shape[2:], scale, None, None)
+            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, img_size, scale, None, None)
 
             # RoI pooling 
             roi_pool_feature = self.roi_pooling_module(feature, roi)

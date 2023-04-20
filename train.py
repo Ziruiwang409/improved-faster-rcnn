@@ -9,7 +9,8 @@ from utils.config import opt
 
 #dataset
 from torch.utils.data import DataLoader
-from data.dataset import inverse_normalize,TestDataset,Dataset
+from data.dataset import inverse_normalize
+from data.dataset import Dataset
 # from data.voc_dataset import VOCBboxDataset
 #from data.kitti_dataset import KITTIDataset
 
@@ -20,7 +21,7 @@ from model.faster_rcnn import Losses
 
 # utils
 from utils import array_tool as at
-from utils.eval_tool import evaluate
+from utils.eval_tool import voc_ap
 
 
 def update_meters(meters, losses):
@@ -70,21 +71,21 @@ def train(**kwargs):
     opt.f_parse_args(kwargs)
 
     # load training dataset 
-    dataset = Dataset(opt)
+    train_data = Dataset(opt,mode='train')
 
     # img, bbox, label, scale = dataset[1000]
     # print('bbox: ',bbox)
     # print('label: ', label)
     # print('scale: ',scale)
     # print('load data')
-    train_dataloader = DataLoader(dataset, 
+    train_dataloader = DataLoader(train_data, 
                             batch_size=1, 
                             shuffle=True,
                             num_workers=opt.train_num_workers)
         
     # # load testing dataset
-    testset = TestDataset(opt)
-    test_dataloader = DataLoader(testset,
+    test_data = Dataset(opt, mode='test')
+    test_dataloader = DataLoader(test_data,
                                  batch_size=1,
                                  shuffle=False, 
                                  num_workers=opt.test_num_workers)
@@ -140,7 +141,10 @@ def train(**kwargs):
         # evaluate
         net.eval()
         
-        mAP = evaluate(net, test_dataloader, device=device, dataset=testset)
+        if opt.database == 'VOC':
+            mAP = voc_ap(net, test_dataloader, dataset=test_data)
+        else:
+            raise NotImplementedError
 
         # save model (if best model)
         if mAP > best_mAP:

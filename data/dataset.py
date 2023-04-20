@@ -4,7 +4,7 @@ import torch as t
 from data.voc_dataset import VOCBboxDataset
 from skimage import transform as sktsf
 from torchvision import transforms as tvtsf
-from data import util
+from data.util import *
 import numpy as np
 from utils.config import opt
 
@@ -39,8 +39,8 @@ def caffe_normalize(img):
     return img
 
 
-def preprocess(img, min_size=600, max_size=1000):
-    """Preprocess an image for feature extraction.
+def resize_and_normalize(img, min_size=600, max_size=1000):
+    """Resize and normalize an image for feature extraction.
     The length of the shorter edge is scaled to :obj:`self.min_size`.
     After the scaling, if the length of the longer edge is longer than
     :param min_size:
@@ -71,54 +71,55 @@ def preprocess(img, min_size=600, max_size=1000):
 
 class Transform(object):
 
-    def __init__(self, min_size=600, max_size=1000):
+    def __init__(self, min_size=600, max_size=1000, train=True):
         self.min_size = min_size
         self.max_size = max_size
+        self.train = train
 
-    def __call__(self, in_data):
-        img, bbox, label = in_data
-        _, H, W = img.shape
-        img = preprocess(img, self.min_size, self.max_size)
-        _, o_H, o_W = img.shape
-        scale = o_H / H
-        bbox = util.resize_bbox(bbox, (H, W), (o_H, o_W))
+    def __call__(self, input_data):
+        # get original image size
+        img, bbox, label, difficult = input_data
+        ori_size = img.shape[1:]
+        # resize image
+        img = resize_and_normalize(img, self.min_size, self.max_size)
+        trans_size = img.shape[1:]
+        # get scale
+        scale = trans_size[0] / ori_size[0]
+        # resize bbox
+        bbox = resize_bbox(bbox, ori_size, trans_size)
 
-        # horizontally flip
-        img, params = util.random_flip(
-            img, x_random=True, return_param=True)
-        bbox = util.flip_bbox(
-            bbox, (o_H, o_W), x_flip=params['x_flip'])
+        # Transform if training
+        if self.train:
+            # image transformation
+            img, params = random_flip(img, x_random=True, return_param=True)
+            # bbox transformation
+            bbox = flip_bbox(bbox, trans_size, x_flip=params['x_flip'])
 
-        return img, bbox, label, scale
-
+            return img.copy(), bbox.copy(), label.copy(), scale
+        else:
+            return img, bbox, label, scale, ori_size, difficult
 
 class Dataset:
-    def __init__(self, opt):
+    def __init__(self, opt, mode='train'):
         self.opt = opt
-        self.db = VOCBboxDataset(opt.voc_data_dir)
-        self.tsf = Transform(opt.min_size, opt.max_size)
+        self.train = True if mode == 'train' else False
+        if opt.database == 'VOC':
+            if self.train:
+                self.db = VOCBboxDataset(opt.voc_data_dir, split='trainval')
+            else:
+                self.db = VOCBboxDataset(opt.voc_data_dir, split='test', use_difficult=True)
+        elif opt.database == 'KITTI':
+            if self.train:
+                self.db = KITTIDataset(opt.kitti_data_dir, split='train')
+            else:
+                self.db = KITTIDataset(opt.kitti_data_dir, split='test')
+        self.tsf = Transform(opt.min_size, opt.max_size, train=self.train)
 
     def __getitem__(self, idx):
-        ori_img, bbox, label, difficult = self.db.get_example(idx)
-
-        img, bbox, label, scale = self.tsf((ori_img, bbox, label))
-        # TODO: check whose stride is negative to fix this instead copy all
-        # some of the strides of a given numpy array are negative.
-        return img.copy(), bbox.copy(), label.copy(), scale
+        input_data = self.db.get_sample(idx)
+        return self.tsf(input_data)
 
     def __len__(self):
         return len(self.db)
 
 
-class TestDataset:
-    def __init__(self, opt, split='test', use_difficult=True):
-        self.opt = opt
-        self.db = VOCBboxDataset(opt.voc_data_dir, split=split, use_difficult=use_difficult)
-
-    def __getitem__(self, idx):
-        ori_img, bbox, label, difficult = self.db.get_example(idx)
-        img = preprocess(ori_img)
-        return img, ori_img.shape[1:], bbox, label, difficult
-
-    def __len__(self):
-        return len(self.db)

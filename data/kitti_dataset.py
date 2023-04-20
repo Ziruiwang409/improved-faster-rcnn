@@ -38,18 +38,15 @@ class KITTIDataset(Dataset):
     image_dir_name = "image_2"
     labels_dir_name = "label_2"
 
-    def __init__(self, opt, split='training', use_difficult=False, 
-                    return_difficult=False):
+    def __init__(self, data_dir, split, use_difficult=False):
         self.opt = opt
-        self.tsf = Transformer(opt.min_size, opt.max_size)
         self.images = []
         self.labels = []
         self.use_difficult = use_difficult
-        self.return_difficult = return_difficult
-        self.data_dir = opt.kitti_data_dir     # absolute path? relative path?
-        self.train = train
+        self.data_dir = data_dir
+        self.train = True if  split == 'train' else False
         self.transforms = transforms
-        self.sub_set = "training" if self.split == 'training' else "testing"
+        self.sub_set = "training" if self.split == 'train' else "testing"
         self.dataset_dir = os.path.join(self.data_dir,self.sub_set)
         
         if self.train:  
@@ -65,7 +62,7 @@ class KITTIDataset(Dataset):
             for img_file in os.listdir(image_dir):
                 self.images.append(os.path.join(image_dir, img_file))
 
-    def __getitem__(self, i):
+    def get_sample(self, i):
         """Get item at a given index.
 
         Args:
@@ -118,13 +115,13 @@ class KITTIDataset(Dataset):
         difficult = list()
         difficult.append(1)   # equal weight for each object
         difficult = np.array(difficult, dtype=np.bool).astype(np.uint8)
-
-        # transform 
-        img, bbox, label, scale = self.tsf((img, bbox, label))
-        return img.copy(), bbox.copy(), label.copy(), scale
+        
+        return img, bbox, label, scale
 
     def __len__(self):
         return len(self.images)
+    
+    __getitem__ = get_sample
 
 KITTI_LABEL_NAMES = (
     'Car', 

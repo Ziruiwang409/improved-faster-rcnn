@@ -7,16 +7,17 @@ import six
 import torch
 
 from model.utils.bbox_tools import bbox_iou
+from utils import array_tool as at
 
-def run_test(net, test_loader, device, dataset):
+def run_test(net, test_loader, dataset):
     # Evaluation for VOC dataset
     pred_bboxes, pred_labels, pred_scores = [], [], []
     gt_bboxes, gt_labels, gt_difficults = [], [], []
     with torch.no_grad():
-        for img, bbox, label, scale, size, difficult in test_loader:
+        for img, bbox, label, scale, ori_size, difficult in test_loader:
             scale = at.scalar(scale)
-            orig_size = [size[0][0].item(), size[1][0].item()]
-            pred_bbox, pred_label, pred_score = net(img, scale, None, None, original_size)
+            original_size = [ori_size[0][0].item(), ori_size[1][0].item()]
+            pred_bbox, pred_label, pred_score = net(img, None, None, scale,original_size)
             gt_bboxes += list(bbox.numpy())
             gt_labels += list(label.numpy())
             gt_difficults += list(difficult.numpy())
@@ -27,7 +28,7 @@ def run_test(net, test_loader, device, dataset):
     return pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_labels, gt_difficults
 
 
-def evaluate(net, test_loader, device, dataset):
+def voc_ap(net, test_loader, dataset):
     # Evaluation for VOC dataset
 
     # initialize evaluation metrics
@@ -35,7 +36,7 @@ def evaluate(net, test_loader, device, dataset):
     iou_threshes = [0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95]
 
     # run test on test dataset
-    pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_labels, gt_difficults = run_test(net, test_loader ,device, dataset)
+    pred_bboxes, pred_labels, pred_scores, gt_bboxes, gt_labels, gt_difficults = run_test(net, test_loader, dataset)
 
     # evaluate results regardless of area size
     for iou_thresh in iou_threshes:

@@ -2,7 +2,7 @@ import torch as t
 import torch.nn as nn
 import torchvision as tv
 
-from model.deformable_conv_network import DeformableConv2d
+from model.deformable_conv_network_v2 import DeformConv2d
 
 # @TODO: add modulated deformable convolution
 # if apply deformable convolution:
