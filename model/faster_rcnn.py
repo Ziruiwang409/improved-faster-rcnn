@@ -138,17 +138,17 @@ class FasterRCNN(nn.Module):
         if self.training:             # (nn.Module parameters training)
             img_size = tuple(x.shape[2:])
             # feature extraction (Backbone CNN: VGG16)
-            feature = self.feature_extraction_module(x)     # type: list of torch.Tensor
+            feature = self.feature_extraction_layer(x)    
             # print("gt_bboxes:", gt_bboxes)
             # print("gt_labels:", gt_labels)
             # RPN (NOTE: FPN based Region Proposal Network)
             roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, img_size, scale, gt_bboxes[0], gt_labels[0])
 
             # RoI pooling 
-            roi_pool_feature = self.roi_pooling_module(feature, roi)
+            roi_pool_feature = self.roi_pooling_layer(feature, roi)
 
             # Bounding Box regression and classification
-            roi_loc, roi_score = self.bbox_regression_and_classification_module(roi_pool_feature)
+            roi_loc, roi_score = self.bbox_regression_and_classification_layer(roi_pool_feature)
 
             # Calculate losses
             n_sample = roi_loc.shape[0]
@@ -175,16 +175,16 @@ class FasterRCNN(nn.Module):
             img_size = tuple(x.shape[2:])
 
             # feature extraction (Backbone CNN: VGG16)
-            feature = self.feature_extraction_module(x)
+            feature = self.feature_extraction_layer(x)
 
             # RPN (NOTE: FPN based Region Proposal Network)
-            roi, gt_roi_loc, gt_roi_label, rpn_loc_loss, rpn_cls_loss = self.rpn(feature, img_size, scale, None, None)
+            roi= self.rpn(feature, img_size, scale, None, None)
 
             # RoI pooling 
-            roi_pool_feature = self.roi_pooling_module(feature, roi)
+            roi_pool_feature = self.roi_pooling_layer(feature, roi)
 
             # Bounding Box regression and classification
-            roi_loc, roi_score = self.bbox_regression_and_classification_module(roi_pool_feature)
+            roi_cls_loc, roi_score = self.bbox_regression_and_classification_layer(roi_pool_feature)
 
             # We are assuming that batch size is 1.
             roi_score = roi_score.data
@@ -193,16 +193,16 @@ class FasterRCNN(nn.Module):
 
             # Convert predictions to bounding boxes in image coordinates.
             # Bounding boxes are scaled to the scale of the input images.
-            mean = t.Tensor(self.loc_normalize_mean).cuda().repeat(self.n_class)[None]
-            std = t.Tensor(self.loc_normalize_std).cuda().repeat(self.n_class)[None]
+            mean = t.Tensor(self.loc_normalize_mean).cuda().repeat(self.n_classes)[None]
+            std = t.Tensor(self.loc_normalize_std).cuda().repeat(self.n_classes)[None]
 
             roi_cls_loc = (roi_cls_loc * std + mean)
-            roi_cls_loc = roi_cls_loc.view(-1, self.n_class, 4)
+            roi_cls_loc = roi_cls_loc.view(-1, self.n_classes, 4)
             roi = roi.view(-1, 1, 4).expand_as(roi_cls_loc)
             cls_bbox = loc2bbox(at.tonumpy(roi).reshape((-1, 4)),
                                 at.tonumpy(roi_cls_loc).reshape((-1, 4)))
             cls_bbox = at.totensor(cls_bbox)
-            cls_bbox = cls_bbox.view(-1, self.n_class * 4)
+            cls_bbox = cls_bbox.view(-1, self.n_classes * 4)
 
             # clip bounding box
             cls_bbox[:, 0::2] = (cls_bbox[:, 0::2]).clamp(min=0, max=ori_size[0])
@@ -216,15 +216,15 @@ class FasterRCNN(nn.Module):
 
 
     # NOTE: Override in the child class (improved_faster_rcnn.py)
-    def feature_extraction_module(self, x):
+    def feature_extraction_layer(self, x):
         raise NotImplementedError
 
     # NOTE: Override in the child class (improved_faster_rcnn.py)
-    def roi_pooling_module(self, feature, roi):
+    def roi_pooling_layer(self, feature, roi):
         raise NotImplementedError
 
     # NOTE: Override in the child class (improved_faster_rcnn.py)
-    def bbox_regression_and_classification_module(self, roi_pool_feat):
+    def bbox_regression_and_classification_layer(self, roi_pool_feat):
         raise NotImplementedError
 
     def _suppress(self, raw_cls_bbox, raw_prob):
@@ -232,8 +232,9 @@ class FasterRCNN(nn.Module):
         label = list()
         score = list()
         # skip cls_id = 0 because it is the background class
-        for l in range(1, self.n_class):
-            cls_bbox_l = raw_cls_bbox.reshape((-1, self.n_class, 4))[:, l, :]
+        for l in range(1, self.n_classes):
+            cls_bbox_l = raw_cls_bbox.reshape((-1, self.n_classes
+            , 4))[:, l, :]
             prob_l = raw_prob[:, l]
             mask = prob_l > self.score_thresh
             cls_bbox_l = cls_bbox_l[mask]

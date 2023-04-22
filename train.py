@@ -38,7 +38,7 @@ def get_meter_data(meters):
     return {k: v.value()[0] for k, v in meters.items()}
 
 def save_model(model, model_name, epoch):
-    save_path = f'./checkpoints/{model_name}/{epoch}.pth'
+    save_path = f'./checkpoints/{model_name}/checkpoint{epoch}.pth'
     save_dir = os.path.dirname(save_path)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
@@ -57,10 +57,8 @@ def build_optimizer(net):
                 params += [{'params': [value], 'lr': lr * 2, 'weight_decay': 0}]
             else:
                 params += [{'params': [value], 'lr': lr, 'weight_decay': opt.weight_decay}]
-    if opt.use_adam:
-        return torch.optim.Adam(params)
-    else:
-        return torch.optim.SGD(params, momentum=0.9)
+    
+    return torch.optim.SGD(params, momentum=0.9)
 
 def train(**kwargs):
 
@@ -93,7 +91,7 @@ def train(**kwargs):
     print('data completed')
 
     # model construction 
-    net = FasterRCNNVGG16().to(device)
+    net = FasterRCNNVGG16(n_fg_class=20).to(device)
     print('model completed')
 
     # optimizer construction
@@ -142,14 +140,14 @@ def train(**kwargs):
         net.eval()
         
         if opt.database == 'VOC':
-            mAP = voc_ap(net, test_dataloader, dataset=test_data)
+            mAP = voc_ap(net, test_dataloader)
         else:
             raise NotImplementedError
 
         # save model (if best model)
         if mAP > best_mAP:
             best_mAP = mAP
-            best_path = save_model(best_mAP, opt.model, epoch)
+            best_path = save_model(net, opt.model, epoch)
         
         # learning rate decay
         if epoch == opt.epoch_decay:

@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+import torch as t
 from torchvision.ops import nms
 from model.utils.bbox_tools import bbox2loc, bbox_iou, loc2bbox
 
@@ -18,17 +18,6 @@ def _unmap(data, count, index, fill=0):
         ret[index, :] = data
     return ret
 
-
-def _get_inside_index(anchor, H, W):
-    # Calc indicies of anchors which are located completely inside of the image
-    # whose size is speficied.
-    index_inside = np.where(
-        (anchor[:, 0] >= 0) &
-        (anchor[:, 1] >= 0) &
-        (anchor[:, 2] <= H) &
-        (anchor[:, 3] <= W)
-    )[0]
-    return index_inside
 
 class SampleTargetProposal(object):
     """Assign ground truth bounding boxes to given RoIs.
@@ -50,58 +39,25 @@ class SampleTargetProposal(object):
         neg_iou_thresh_lo (float): See above.
     """
 
-    def __init__(self,
-                 n_sample=128,
-                 pos_ratio=0.25, pos_iou_thresh=0.5,
-                 neg_iou_thresh_hi=0.5, neg_iou_thresh_lo=0.0
-                 ):
+    def __init__(
+            self,
+            n_sample=128,
+            pos_ratio=0.25,
+            pos_iou_thresh=0.5,
+            neg_iou_thresh_hi=0.5,
+            neg_iou_thresh_lo=0.0
+    ):
         self.n_sample = n_sample
         self.pos_ratio = pos_ratio
         self.pos_iou_thresh = pos_iou_thresh
         self.neg_iou_thresh_hi = neg_iou_thresh_hi
         self.neg_iou_thresh_lo = neg_iou_thresh_lo  # NOTE:default 0.1 in py-faster-rcnn
 
-    def __call__(self, roi, bbox, label,
-                 loc_normalize_mean=(0., 0., 0., 0.),
-                 loc_normalize_std=(0.1, 0.1, 0.2, 0.2)):
-        """Assigns ground truth to sampled proposals.
-        This function samples total of :obj:`self.n_sample` RoIs
-        from the combination of :obj:`roi` and :obj:`bbox`.
-        The RoIs are assigned with the ground truth class labels as well as
-        bounding box offsets and scales to match the ground truth bounding
-        boxes. As many as :obj:`pos_ratio * self.n_sample` RoIs are
-        sampled as foregrounds.
-        Offsets and scales of bounding boxes are calculated using
-        :func:`model.utils.bbox_tools.bbox2loc`.
-        Also, types of input arrays and output arrays are same.
-        Here are notations.
-        * :math:`S` is the total number of sampled RoIs, which equals \
-            :obj:`self.n_sample`.
-        * :math:`L` is number of object classes possibly including the \
-            background.
-        Args:
-            roi (array): Region of Interests (RoIs) from which we sample.
-                Its shape is :math:`(R, 4)`
-            bbox (array): The coordinates of ground truth bounding boxes.
-                Its shape is :math:`(R', 4)`.
-            label (array): Ground truth bounding box labels. Its shape
-                is :math:`(R',)`. Its range is :math:`[0, L - 1]`, where
-                :math:`L` is the number of foreground classes.
-            loc_normalize_mean (tuple of four floats): Mean values to normalize
-                coordinates of bouding boxes.
-            loc_normalize_std (tupler of four floats): Standard deviation of
-                the coordinates of bounding boxes.
-        Returns:
-            (array, array, array):
-            * **sample_roi**: Regions of interests that are sampled. \
-                Its shape is :math:`(S, 4)`.
-            * **gt_roi_loc**: Offsets and scales to match \
-                the sampled RoIs to the ground truth bounding boxes. \
-                Its shape is :math:`(S, 4)`.
-            * **gt_roi_label**: Labels assigned to sampled RoIs. Its shape is \
-                :math:`(S,)`. Its range is :math:`[0, L]`. The label with \
-                value 0 is the background.
-        """
+    def __call__(
+            self, roi, bbox, label,
+            loc_normalize_mean=(0., 0., 0., 0.),
+            loc_normalize_std=(0.1, 0.1, 0.2, 0.2)
+    ):
         n_bbox, _ = bbox.shape
 
         roi = np.concatenate((roi, bbox), axis=0)
@@ -110,6 +66,7 @@ class SampleTargetProposal(object):
         iou = bbox_iou(roi, bbox)
         gt_assignment = iou.argmax(axis=1)
         max_iou = iou.max(axis=1)
+
         # Offset range of classes from [0, n_fg_class - 1] to [1, n_fg_class].
         # The label with value 0 is the background.
         gt_roi_label = label[gt_assignment] + 1
@@ -165,46 +122,27 @@ class SampleTargetAnchor(object):
         pos_ratio (float): Ratio of positive regions in the
             sampled regions.
     """
-
-    def __init__(self,
-                 n_sample=256,
-                 pos_iou_thresh=0.7, neg_iou_thresh=0.3,
-                 pos_ratio=0.5):
+    def __init__(
+            self,
+            n_sample=256,
+            pos_iou_thresh=0.7,
+            neg_iou_thresh=0.3,
+            pos_ratio=0.5
+    ):
         self.n_sample = n_sample
         self.pos_iou_thresh = pos_iou_thresh
         self.neg_iou_thresh = neg_iou_thresh
         self.pos_ratio = pos_ratio
 
     def __call__(self, bbox, anchor, img_size):
-        """Assign ground truth supervision to sampled subset of anchors.
-        Types of input arrays and output arrays are same.
-        Here are notations.
-        * :math:`S` is the number of anchors.
-        * :math:`R` is the number of bounding boxes.
-        Args:
-            bbox (array): Coordinates of bounding boxes. Its shape is
-                :math:`(R, 4)`.
-            anchor (array): Coordinates of anchors. Its shape is
-                :math:`(S, 4)`.
-            img_size (tuple of ints): A tuple :obj:`H, W`, which
-                is a tuple of height and width of an image.
-        Returns:
-            (array, array):
-            #NOTE: it's scale not only  offset
-            * **loc**: Offsets and scales to match the anchors to \
-                the ground truth bounding boxes. Its shape is :math:`(S, 4)`.
-            * **label**: Labels of anchors with values \
-                :obj:`(1=positive, 0=negative, -1=ignore)`. Its shape \
-                is :math:`(S,)`.
-        """
-
         img_H, img_W = img_size
 
         n_anchor = len(anchor)
-        inside_index = _get_inside_index(anchor, img_H, img_W)
+        # inside_index = _get_inside_index(anchor, img_H, img_W)
+        inside_index = np.arange(n_anchor)
+
         anchor = anchor[inside_index]
-        argmax_ious, label = self._create_label(
-            inside_index, anchor, bbox)
+        argmax_ious, label = self._create_label(inside_index, anchor, bbox)
 
         # compute bounding box regression targets
         loc = bbox2loc(anchor, bbox[argmax_ious])
@@ -253,6 +191,7 @@ class SampleTargetAnchor(object):
     def _calc_ious(self, anchor, bbox, inside_index):
         # ious between the anchors and the gt boxes
         ious = bbox_iou(anchor, bbox)
+
         argmax_ious = ious.argmax(axis=1)
         max_ious = ious[np.arange(len(inside_index)), argmax_ious]
         gt_argmax_ious = ious.argmax(axis=0)
@@ -264,9 +203,6 @@ class SampleTargetAnchor(object):
 
 
 class GenerateProposals:
-    # unNOTE: I'll make it undifferential
-    # unTODO: make sure it's ok
-    # It's ok
     """Proposal regions are generated by calling this object.
     The :meth:`__call__` of this object outputs object detection proposals by
     applying estimated bounding box offsets
@@ -314,39 +250,10 @@ class GenerateProposals:
         self.n_test_post_nms = n_test_post_nms
         self.min_size = min_size
 
-    def __call__(self, loc, score,
-                 anchor, img_size, scale=1.):
-        """input should  be ndarray
-        Propose RoIs.
-        Inputs :obj:`loc, score, anchor` refer to the same anchor when indexed
-        by the same index.
-        On notations, :math:`R` is the total number of anchors. This is equal
-        to product of the height and the width of an image and the number of
-        anchor bases per pixel.
-        Type of the output is same as the inputs.
-        Args:
-            loc (array): Predicted offsets and scaling to anchors.
-                Its shape is :math:`(R, 4)`.
-            score (array): Predicted foreground probability for anchors.
-                Its shape is :math:`(R,)`.
-            anchor (array): Coordinates of anchors. Its shape is
-                :math:`(R, 4)`.
-            img_size (tuple of ints): A tuple :obj:`height, width`,
-                which contains image size after scaling.
-            scale (float): The scaling factor used to scale an image after
-                reading it from a file.
-        Returns:
-            array:
-            An array of coordinates of proposal boxes.
-            Its shape is :math:`(S, 4)`. :math:`S` is less than
-            :obj:`self.n_test_post_nms` in test time and less than
-            :obj:`self.n_train_post_nms` in train time. :math:`S` depends on
-            the size of the predicted bounding boxes and the number of
-            bounding boxes discarded by NMS.
-        """
+    def __call__(self, loc, score, anchor, img_size, scale=1.):
         # NOTE: when test, remember
         # faster_rcnn.eval()
-        # to set self.traing = False
+        # to set self.training = False
         if self.parent_model.training:
             n_pre_nms = self.n_train_pre_nms
             n_post_nms = self.n_train_post_nms
@@ -355,14 +262,11 @@ class GenerateProposals:
             n_post_nms = self.n_test_post_nms
 
         # Convert anchors into proposal via bbox transformations.
-        # roi = loc2bbox(anchor, loc)
         roi = loc2bbox(anchor, loc)
 
         # Clip predicted boxes to image.
-        roi[:, slice(0, 4, 2)] = np.clip(
-            roi[:, slice(0, 4, 2)], 0, img_size[0])
-        roi[:, slice(1, 4, 2)] = np.clip(
-            roi[:, slice(1, 4, 2)], 0, img_size[1])
+        roi[:, slice(0, 4, 2)] = np.clip(roi[:, slice(0, 4, 2)], 0, img_size[0])
+        roi[:, slice(1, 4, 2)] = np.clip(roi[:, slice(1, 4, 2)], 0, img_size[1])
 
         # Remove predicted boxes with either height or width < threshold.
         min_size = self.min_size * scale
@@ -385,12 +289,16 @@ class GenerateProposals:
 
         # unNOTE: somthing is wrong here!
         # TODO: remove cuda.to_gpu
+
         keep = nms(
-            torch.from_numpy(roi).cuda(),
-            torch.from_numpy(score).cuda(),
-            self.nms_thresh)
+            t.from_numpy(roi).cuda(),
+            t.from_numpy(score).cuda(),
+            self.nms_thresh
+        )
+
         if n_post_nms > 0:
             keep = keep[:n_post_nms]
         roi = roi[keep.cpu().numpy()]
+
         return roi
     

@@ -8,19 +8,19 @@ from pprint import pprint
 class Config:
 
     # dataset params
-    database = 'VOC'  # choose one from 'voc', 'kitti', 'coco'
+    database = 'VOC'  # choose one from ['VOC', 'KITTI', 'COCO']
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     min_size = 600  # image resize
     max_size = 1000 # image resize
     train_num_workers = 8
     test_num_workers = 8
 
-    nms_thresh = 0.3
-    score_thresh = 0.05
+    nms_thresh = 0.3        # iou threshold in nms
+    score_thresh = 0.05     # score threshold in nms
 
     # sigma for l1_smooth_loss
-    rpn_sigma = 3.
-    roi_sigma = 1.
+    rpn_sigma = 3.          
+    roi_sigma = 1.          
 
     # param for optimizer
     # 0.0005 in origin paper but 0.0001 in tf-faster-rcnn
@@ -30,24 +30,15 @@ class Config:
 
 
     # preset
-    pretrained_model = 'vgg16'
+    model = 'vgg16'  # choose one from ['vgg16', 'resnet50']
+    backbone = 'vgg16' # choose one from ['vgg16', 'resnet50']
 
     # training
-    epoch = 14
-
-
-    use_adam = False # Use Adam optimizer
-    use_chainer = False # try match everything as chainer
-    use_drop = False # use dropout in RoIHead
-    # debug
-    debug_file = '/tmp/debugf'
+    epoch = 15
+    epoch_decay = 10
 
     test_num = 10000
-    # model
-    load_path = None
-
-    caffe_pretrain = False # use caffe pretrained model instead of torchvision
-    caffe_pretrain_path = 'checkpoints/vgg16_caffe.pth'
+    save_dir = './outputs'
 
     def f_parse_args(self, kwargs):
         '''

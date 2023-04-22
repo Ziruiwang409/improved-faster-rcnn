@@ -5,7 +5,7 @@ from utils.config import opt
 
 #dataset
 from torch.utils.data import DataLoader
-from data.dataset import TestDataset
+from data.dataset import Dataset
 # from data.voc_dataset import VOCBboxDataset
 # from data.kitti_dataset import KITTIDataset
 
@@ -13,7 +13,7 @@ from data.dataset import TestDataset
 from model import FasterRCNNVGG16
 
 # utils
-from utils.eval_tool import evaluate
+from utils.eval_tool import voc_ap
 
 def test(**kwargs):
 
@@ -23,7 +23,7 @@ def test(**kwargs):
     # parse model parameters from config 
     opt.f_parse_args(kwargs)
     # # load testing dataset
-    testset = TestDataset(opt)
+    testset = Dataset(opt, mode='test')
     test_dataloader = DataLoader(testset,
                                  batch_size=1,
                                  shuffle=False, 
@@ -38,11 +38,11 @@ def test(**kwargs):
     # load pretrained weight
     PATH = f'{opt.save_dir}/fasterrcnn_vgg16.pth'
     net.load_state_dict(torch.load(PATH))
-    print('load weight completed')
+    print('pretrained weight loaded')
 
     # evaluation
     net.eval()
-    aps = evaluate(net, test_dataloader, device=device, dataset=testset)
+    
 
 
 

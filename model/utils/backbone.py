@@ -2,7 +2,6 @@ import torch as t
 import torch.nn as nn
 import torchvision as tv
 
-from model.deformable_conv_network_v2 import DeformConv2d
 
 # @TODO: add modulated deformable convolution
 # if apply deformable convolution:
@@ -14,7 +13,7 @@ from model.deformable_conv_network_v2 import DeformConv2d
 '''
     Load pretrained VGG16 model and replace 
     all dense layers with conv layers '''
-def load_vgg16(pretrained=True, deformable=False, modulated=False):
+def load_vgg16(pretrained=True):
 
     model = tv.models.vgg16(pretrained=pretrained)
 

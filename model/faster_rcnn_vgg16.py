@@ -86,7 +86,7 @@ class FasterRCNNVGG16(FasterRCNN):
         return F.interpolate(x, size=(h, w), mode='bilinear', align_corners=True) + y
     
     # NOTE: inherent from FasterRCNN class
-    def feature_extraction_module(self, x):
+    def feature_extraction_layer(self, x):
         features = []
         for i, layer in enumerate(self.extractor):
             x = layer(x)
@@ -94,35 +94,32 @@ class FasterRCNNVGG16(FasterRCNN):
                 features.append(x)
 
         # top-down pathway & smoothing
-        p5 = self.lateral_layer1(features[3])
-        p4 = self.bilinear_interpolate(p5, self.lateral_layer2(features[2]))    # upsample
+        p6 = self.lateral_layer1(features[3])
+        p5 = self.bilinear_interpolate(p6, self.lateral_layer2(features[2]))    # upsample
+        p4 = self.bilinear_interpolate(p5, self.lateral_layer3(features[1]))    # upsample
+        p3 = self.bilinear_interpolate(p4, self.lateral_layer4(features[0]))    # upsample
+        
+        p5 = self.smooth1(p5)
         p4 = self.smooth1(p4)
-        p3 = self.bilinear_interpolate(p4, self.lateral_layer3(features[1]))    # upsample
-        p3 = self.smooth2(p3)
-        p2 = self.bilinear_interpolate(p3, self.lateral_layer4(features[0]))    # upsample
-        p2 = self.smooth3(p2)
+        p3 = self.smooth3(p3)
 
-        return [p2, p3, p4, p5]
+        return [p3, p4, p5, p6]
     
     # NOTE: inherent from FasterRCNN Class
-    def roi_pooling_module(self, feature, roi):
+    def roi_pooling_layer(self, feature, roi):
         roi = at.totensor(roi).float()
         # n_features -> the number of features to use for RoI-Pooling
         #               not that of all features
 
         # n_features = self.n_features
         # compute the lowest & highest level
-        low = 2
-        high = 5
+        low = self.k0 - 2
+        high = self.k0 + 1
         # compute feature level
         k = assign_feature_level(roi, self.k0, low, high)
         # possible starting level
         starting_lv = t.arange(low, high + 1)
-        # if n_features == 2:
-        #     starting_lv = starting_lv[:-1]
-        # elif n_features == 3:
-        #     starting_lv = starting_lv[:-2]
-        # perform RoI-Pooling
+
         pooled_feats = []
         box_to_levels = []
         for i, l in enumerate(starting_lv):
@@ -153,7 +150,7 @@ class FasterRCNNVGG16(FasterRCNN):
 
         return pooled_feats
 
-    def bbox_regression_and_classification_module(self, pooled_feature):
+    def bbox_regression_and_classification_layer(self, pooled_feature):
         
         # flatten roi pooled feature
         pooled_feature = pooled_feature.view(pooled_feature.shape[0], -1)
@@ -175,30 +172,15 @@ def assign_feature_level(roi, k0, low, high):
     k = t.log2(t.sqrt(h * w) / 224.) + k0
 
     # get lower & upper limit of feature levels
-   # if n_features == 1:
     k = t.round(k)
     k[k < low] = low
     k[k > high] = high
-    # elif n_features == 2:
-    #     l1, l2, l3 = low, low + 1, low + 2
-    #     level[level < l2] = l1
-    #     level[(level >= l2) & (level < l3)] = l2
-    #     level[level >= l3] = l3
-    # elif n_features == 3:
-    #     limit = (low + high) / 2.
-    #     level[level < limit] = low
-    #     level[level >= limit] = low + 1
-    # else:
-    #     raise NotImplementedError('Not implemented yet.')
+
     return k
 
-def normal_init(m, mean, stddev, truncated=False):
+def normal_init(m, mean, stddev):
     """
     weight initalizer: truncated normal and random normal.
     """
-    # x is a parameter
-    if truncated:
-        m.weight.data.normal_().fmod_(2).mul_(stddev).add_(mean)  # not a perfect approximation
-    else:
-        m.weight.data.normal_(mean, stddev)
-        m.bias.data.zero_()
+    m.weight.data.normal_(mean, stddev)
+    m.bias.data.zero_()
