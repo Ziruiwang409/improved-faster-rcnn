@@ -55,7 +55,7 @@ def voc_ap(net, test_loader):
     map_result['mAP'] /= 10
 
     # print results
-    print('mAP: {:.2f}, mAP@0.5: {:.2f}, mAP@0.75: {:.2f}'.format(map_result['mAP']*100, map_result['mAP_0.5']*100, map_result['mAP_0.75']*100))
+    print('Result: mAP=={:.2f} | mAP@0.5== {:.2f} | mAP@0.75=={:.2f}'.format(map_result['mAP']*100, map_result['mAP_0.5']*100, map_result['mAP_0.75']*100))
 
 
     return map_result['mAP']

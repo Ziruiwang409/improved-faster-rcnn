@@ -1,5 +1,6 @@
 from __future__ import  absolute_import
 import os
+import sys
 
 from tqdm import tqdm
 import torch
@@ -23,6 +24,14 @@ from model.faster_rcnn import Losses
 from utils import array_tool as at
 from utils.eval_tool import voc_ap
 
+def setup_logger():
+    if not os.path.exists(opt.save_dir):
+        os.makedirs(opt.save_dir)
+    f = open(f'{opt.save_dir}/log.txt', 'w')
+    sys.stdout = f
+
+    return f
+
 
 def update_meters(meters, losses):
     loss_d = {k: at.scalar(v) for k, v in losses._asdict().items()}
@@ -44,6 +53,8 @@ def save_model(model, model_name, epoch):
         os.makedirs(save_dir)
     torch.save(model.state_dict(), save_path)
 
+    return save_path
+
 def build_optimizer(net):
     """
     return optimizer, It could be overwriten if you want to specify 
@@ -60,14 +71,19 @@ def build_optimizer(net):
     
     return torch.optim.SGD(params, momentum=0.9)
 
+
 def train(**kwargs):
 
     # set up cuda
     device = torch.device('cuda' if  torch.cuda.is_available() else 'cpu')
 
+    # set up logger
+    #log = setup_logger()
+
     # parse model parameters from config 
     opt.f_parse_args(kwargs)
 
+    print('Load dataset')
     # load training dataset 
     train_data = Dataset(opt,mode='train')
 
@@ -88,21 +104,24 @@ def train(**kwargs):
                                  shuffle=False, 
                                  num_workers=opt.test_num_workers)
     
-    print('data completed')
 
+    print('Load model')
     # model construction 
-    net = FasterRCNNVGG16(n_fg_class=20).to(device)
-    print('model completed')
+    net = FasterRCNNVGG16().to(device)
 
+    print('Load optimizer')
     # optimizer construction
     optimizer = build_optimizer(net)
-    print('optimizer completed')
 
+    print('Load hyperparameters')
     # fitting 
     meters = {k: AverageValueMeter() for k in Losses._fields}
-
     best_mAP = 0
+    best_path = None
     lr = opt.lr
+
+
+    print('Start training...')
     for epoch in range(1, opt.epoch + 1):
         # switch to train mode
         net.train()
@@ -135,7 +154,6 @@ def train(**kwargs):
                                                                                                                                                           roi_cls_loss,
                                                                                                                                                           total_loss))
 
-    
         # evaluate
         net.eval()
         
@@ -147,21 +165,26 @@ def train(**kwargs):
         # save model (if best model)
         if mAP > best_mAP:
             best_mAP = mAP
+
             best_path = save_model(net, opt.model, epoch)
         
         # learning rate decay
         if epoch == opt.epoch_decay:
             # load best model
-            state_dict = torch.load(best_path)
-            net.load_state_dict(state_dict)
+            net.load_state_dict(torch.load(best_path))
             # learning rate decay
             for param in optimizer.param_groups:
                 param['lr'] *= opt.lr_decay
             lr = lr * opt.lr_decay
     
     # save final model
-    PATH = f'{opt.save_dir}/fasterrcnn_vgg16.pth'
+    PATH = f'./exp/{opt.model}.pth'
+    target_dir = os.path.dirname(PATH)
+    if not os.path.exists(target_dir):
+        os.makedirs(target_dir)
     torch.save(net.state_dict(), PATH)
+
+    #log.close()
 
 
 if __name__ == '__main__':

@@ -22,24 +22,23 @@ def test(**kwargs):
 
     # parse model parameters from config 
     opt.f_parse_args(kwargs)
-    # # load testing dataset
-    testset = Dataset(opt, mode='test')
-    test_dataloader = DataLoader(testset,
-                                 batch_size=1,
-                                 shuffle=False, 
-                                 num_workers=opt.test_num_workers)
-    
-    print('data completed')
 
+    print('Load dataset')
+    # # load testing dataset
+    test_data = Dataset(opt, mode='test')
+    test_loader = DataLoader(test_data,
+                             batch_size=1,
+                             shuffle=False, 
+                             num_workers=opt.test_num_workers)
+    
+    print('Load pre-trained model')
     # model construction 
     net = FasterRCNNVGG16().to(device)
-    print('model completed')
-
     # load pretrained weight
     PATH = f'{opt.save_dir}/fasterrcnn_vgg16.pth'
     net.load_state_dict(torch.load(PATH))
-    print('pretrained weight loaded')
 
+    print('Start evaluation')
     # evaluation
     net.eval()
     

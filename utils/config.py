@@ -2,8 +2,6 @@ from pprint import pprint
 
 
 # Default Configs for training
-# NOTE that, config items could be overwriten by passing argument through command line.
-# e.g. --voc-data-dir='./data/'
 
 class Config:
 
@@ -31,14 +29,15 @@ class Config:
 
     # preset
     model = 'vgg16'  # choose one from ['vgg16', 'resnet50']
-    backbone = 'vgg16' # choose one from ['vgg16', 'resnet50']
+    deformable = False
+    modulated = False
 
     # training
     epoch = 15
     epoch_decay = 10
 
     test_num = 10000
-    save_dir = './outputs'
+    save_dir = './exp'
 
     def f_parse_args(self, kwargs):
         '''
