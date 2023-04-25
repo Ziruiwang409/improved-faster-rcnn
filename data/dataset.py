@@ -2,6 +2,7 @@ from __future__ import  absolute_import
 from __future__ import  division
 import torch as t
 from data.voc_dataset import VOCBboxDataset
+from data.kitti_dataset import KITTIDataset
 from skimage import transform as sktsf
 import torchvision.transforms.functional as F
 from data.util import *
@@ -98,7 +99,7 @@ class Dataset:
             if self.train:
                 self.db = KITTIDataset(opt.kitti_data_dir, split='train')
             else:
-                self.db = KITTIDataset(opt.kitti_data_dir, split='test')
+                self.db = KITTIDataset(opt.kitti_data_dir, split='val')
         self.tsf = Transform(opt.min_size, opt.max_size, train=self.train)
 
     def __getitem__(self, idx):

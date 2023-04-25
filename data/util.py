@@ -40,7 +40,6 @@ def read_image(path, dtype=np.float32, color=True):
         # transpose (H, W, C) -> (C, H, W)
         return img.transpose((2, 0, 1))
 
-
 def resize_bbox(bbox, in_size, out_size):
     """Resize bounding boxes according to image resize.
 
@@ -72,7 +71,6 @@ def resize_bbox(bbox, in_size, out_size):
     bbox[:, 1] = x_scale * bbox[:, 1]
     bbox[:, 3] = x_scale * bbox[:, 3]
     return bbox
-
 
 def flip_bbox(bbox, size, y_flip=False, x_flip=False):
     """Flip bounding boxes accordingly.
@@ -112,7 +110,6 @@ def flip_bbox(bbox, size, y_flip=False, x_flip=False):
         bbox[:, 1] = x_min
         bbox[:, 3] = x_max
     return bbox
-
 
 def crop_bbox(
         bbox, y_slice=None, x_slice=None,
@@ -185,7 +182,6 @@ def crop_bbox(
     else:
         return bbox
 
-
 def _slice_to_bounds(slice_):
     if slice_ is None:
         return 0, np.inf
@@ -201,7 +197,6 @@ def _slice_to_bounds(slice_):
         u = slice_.stop
 
     return l, u
-
 
 def translate_bbox(bbox, y_offset=0, x_offset=0):
     """Translate bounding boxes.
@@ -235,7 +230,6 @@ def translate_bbox(bbox, y_offset=0, x_offset=0):
     out_bbox[:, 2:] += (y_offset, x_offset)
 
     return out_bbox
-
 
 def random_flip(img, y_random=False, x_random=False,
                 return_param=False, copy=False):

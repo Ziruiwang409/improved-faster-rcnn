@@ -6,8 +6,9 @@ from pprint import pprint
 class Config:
 
     # dataset params
-    database = 'VOC'  # choose one from ['VOC', 'KITTI', 'COCO']
+    database = 'KITTI'  # choose one from ['VOC', 'KITTI', 'COCO']
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
+    kitti_data_dir = '/data/ziruiw3/KITTI2VOC/'
     min_size = 600  # image resize
     max_size = 1000 # image resize
     train_num_workers = 8

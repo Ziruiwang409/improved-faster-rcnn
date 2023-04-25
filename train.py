@@ -46,14 +46,14 @@ def reset_meters(meters):
 def get_meter_data(meters):
     return {k: v.value()[0] for k, v in meters.items()}
 
-def save_model(model, model_name, epoch):
-    save_path = f'./checkpoints/{model_name}/checkpoint{epoch}.pth'
-    save_dir = os.path.dirname(save_path)
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    torch.save(model.state_dict(), save_path)
+def save_model(model, model_name, dataset_name,epoch):
+    PATH = f'./checkpoints/{model_name}/{dataset_name}/checkpoint{epoch}.pth'
+    dir = os.path.dirname(PATH)
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    torch.save(model.state_dict(), PATH)
 
-    return save_path
+    return PATH
 
 def build_optimizer(net):
     """
@@ -77,8 +77,6 @@ def train(**kwargs):
     # set up cuda
     device = torch.device('cuda' if  torch.cuda.is_available() else 'cpu')
 
-    # set up logger
-    #log = setup_logger()
 
     # parse model parameters from config 
     opt.f_parse_args(kwargs)
@@ -86,12 +84,6 @@ def train(**kwargs):
     print('Load dataset')
     # load training dataset 
     train_data = Dataset(opt,mode='train')
-
-    # img, bbox, label, scale = dataset[1000]
-    # print('bbox: ',bbox)
-    # print('label: ', label)
-    # print('scale: ',scale)
-    # print('load data')
     train_dataloader = DataLoader(train_data, 
                             batch_size=1, 
                             shuffle=True,
@@ -106,8 +98,11 @@ def train(**kwargs):
     
 
     print('Load model')
-    # model construction 
-    net = FasterRCNNVGG16().to(device)
+    # model construction
+    if opt.database == 'voc': 
+        net = FasterRCNNVGG16(n_fg_class=20).to(device) 
+    elif opt.database == 'kitti':
+        net = FasterRCNNVGG16(n_fg_class=3).to(device)  # 3 classes: Car, Pedestrian, Cyclist
 
     print('Load optimizer')
     # optimizer construction
@@ -157,16 +152,14 @@ def train(**kwargs):
         # evaluate
         net.eval()
         
-        if opt.database == 'VOC':
-            mAP = voc_ap(net, test_dataloader)
-        else:
-            raise NotImplementedError
+
+        mAP = voc_ap(net, test_dataloader)
+
 
         # save model (if best model)
         if mAP > best_mAP:
             best_mAP = mAP
-
-            best_path = save_model(net, opt.model, epoch)
+            best_path = save_model(net, opt.model,opt.database, epoch)
         
         # learning rate decay
         if epoch == opt.epoch_decay:
@@ -178,7 +171,7 @@ def train(**kwargs):
             lr = lr * opt.lr_decay
     
     # save final model
-    PATH = f'./exp/{opt.model}.pth'
+    PATH = f'{opt.save_dir}/{opt.database}/{opt.model}.pth'
     target_dir = os.path.dirname(PATH)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)
