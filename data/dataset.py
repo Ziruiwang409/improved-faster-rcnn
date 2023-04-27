@@ -90,12 +90,12 @@ class Dataset:
     def __init__(self, opt, mode='train'):
         self.opt = opt
         self.train = True if mode == 'train' else False
-        if opt.database == 'VOC':
+        if opt.database == 'voc':
             if self.train:
                 self.db = VOCBboxDataset(opt.voc_data_dir, split='trainval')
             else:
                 self.db = VOCBboxDataset(opt.voc_data_dir, split='test', use_difficult=True)
-        elif opt.database == 'KITTI':
+        elif opt.database == 'kitti':
             if self.train:
                 self.db = KITTIDataset(opt.kitti_data_dir, split='train')
             else:

@@ -13,6 +13,7 @@ from collections import namedtuple
 from utils import array_tool as at
 from model.utils.bbox_tools import loc2bbox
 from utils.config import opt
+from model.utils.misc import bbox_regression_loss
 
 # Loss Tuple
 Losses = namedtuple('Losses',
@@ -23,7 +24,7 @@ Losses = namedtuple('Losses',
                         'total_loss'
                         ])
 
-class FasterRCNN(nn.Module):
+class FasterRCNNBottleneck(nn.Module):
     """Base class for Faster R-CNN.
 
     This is a base class for Faster R-CNN links supporting object detection
@@ -72,13 +73,13 @@ class FasterRCNN(nn.Module):
 
     """
 
-    def __init__(self, extractor, rpn, predictor, n_classes, loc, score,
+    def __init__(self, extractor, rpn, classifier, n_classes, loc, score,
                  spatial_scale, pooling_size, roi_sigma):
-        super(FasterRCNN, self).__init__()
+        super(FasterRCNNBottleneck, self).__init__()
         # architecture parameters
         self.extractor = extractor
         self.rpn = rpn
-        self.predictor = predictor
+        self.classifier = classifier
 
         # hyper parameters
         self.n_classes = n_classes
@@ -251,27 +252,7 @@ class FasterRCNN(nn.Module):
         score = np.concatenate(score, axis=0).astype(np.float32)
         return bbox, label, score
 
-    
-def smooth_l1_loss(x, t, in_weight, sigma):
-    sigma2 = sigma ** 2
-    diff = in_weight * (x - t)
-    abs_diff = diff.abs()
-    flag = (abs_diff.data < (1. / sigma2)).float()
-    y = (flag * (sigma2 / 2.) * (diff ** 2) +
-         (1 - flag) * (abs_diff - 0.5 / sigma2))
-    return y.sum()
 
-
-def bbox_regression_loss(pred_loc, gt_loc, gt_label, sigma):
-    in_weight = t.zeros(gt_loc.shape).cuda()
-    # Localization loss is calculated only for positive rois.
-    # NOTE:  unlike origin implementation, 
-    # we don't need inside_weight and outside_weight, they can calculate by gt_label
-    in_weight[(gt_label > 0).view(-1, 1).expand_as(in_weight).cuda()] = 1
-    loc_loss = smooth_l1_loss(pred_loc, gt_loc, in_weight.detach(), sigma)
-    # Normalize by total number of negtive and positive rois.
-    loc_loss /= ((gt_label >= 0).sum().float()) # ignore gt_label==-1 for rpn_loss
-    return loc_loss
 
 
 

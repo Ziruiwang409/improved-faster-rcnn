@@ -106,7 +106,5 @@ class KITTIDataset:
 
 KITTI_LABEL_NAMES = (
     'car', 
-    'rider', 
-    'truck',
-    'bus', 
-    'person')
+    'pedestrian', 
+    'cyclist')

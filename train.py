@@ -16,9 +16,9 @@ from data.dataset import Dataset
 #from data.kitti_dataset import KITTIDataset
 
 # model 
-from model import FasterRCNNVGG16
+from model import FasterRCNNVGG16, FPNFasterRCNNVGG16
 from torchnet.meter import AverageValueMeter
-from model.faster_rcnn import Losses
+from model.frcnn_bottleneck import Losses
 
 # utils
 from utils import array_tool as at
@@ -100,9 +100,15 @@ def train(**kwargs):
     print('Load model')
     # model construction
     if opt.database == 'voc': 
-        net = FasterRCNNVGG16(n_fg_class=20).to(device) 
+        if opt.apply_fpn:
+            net = FPNFasterRCNNVGG16(n_fg_class=20).to(device)
+        else:
+            net = FasterRCNNVGG16(n_fg_class=20).to(device) 
     elif opt.database == 'kitti':
-        net = FasterRCNNVGG16(n_fg_class=3).to(device)  # 3 classes: Car, Pedestrian, Cyclist
+        if opt.apply_fpn:
+            net = FPNFasterRCNNVGG16(n_fg_class=3).to(device)
+        else:
+            net = FasterRCNNVGG16(n_fg_class=3).to(device)  # 3 classes: Car, Pedestrian, Cyclist
 
     print('Load optimizer')
     # optimizer construction
@@ -171,7 +177,8 @@ def train(**kwargs):
             lr = lr * opt.lr_decay
     
     # save final model
-    PATH = f'{opt.save_dir}/{opt.database}/{opt.model}.pth'
+    model_name = 'frcnn_vgg16' if not opt.apply_fpn else 'fpn_frcnn_vgg16'
+    PATH = f'{opt.save_dir}/{opt.database}/{model_name}.pth'
     target_dir = os.path.dirname(PATH)
     if not os.path.exists(target_dir):
         os.makedirs(target_dir)

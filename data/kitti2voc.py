@@ -157,11 +157,11 @@ def single_image_label_process(kitti_image_path,kitti_txt_path,voc_image_path,vo
                 ymax = min(int(float(strs[7]))+1,h)
                 label = strs[0]
                 if label in ['Person_sitting',"Pedestrian"]:
-                    label = 'Pedestrians'
+                    label = 'pedestrian'
                 elif label in ['Cyclist']:
-                    label = 'Cyclist'
+                    label = 'cyclist'
                 elif label in ['Car','Van','Truck','Tram']:
-                    label = 'Car'
+                    label = 'car'
                 writer.addObject(label,xmin,ymin,xmax,ymax)
         writer.save(voc_annotation_path)
 

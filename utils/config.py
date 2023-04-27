@@ -6,7 +6,7 @@ from pprint import pprint
 class Config:
 
     # dataset params
-    database = 'KITTI'  # choose one from ['VOC', 'KITTI', 'COCO']
+    database = 'kitti'  # choose one from ['VOC', 'KITTI', 'COCO']
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     kitti_data_dir = '/data/ziruiw3/KITTI2VOC/'
     min_size = 600  # image resize
@@ -30,12 +30,13 @@ class Config:
 
     # preset
     model = 'vgg16'  # choose one from ['vgg16', 'resnet50']
+    apply_fpn = True
     deformable = False
     modulated = False
 
     # training
-    epoch = 15
-    epoch_decay = 10
+    epoch = 14
+    epoch_decay = 9
 
     test_num = 10000
     save_dir = './exp'

@@ -5,16 +5,18 @@ from torch.nn import functional as F
 import torchvision as tv
 
 # Faster R-CNN Packages
-from model.faster_rcnn import FasterRCNN
-from model.utils.backbone import load_vgg16
+from model.frcnn_bottleneck import FasterRCNNBottleneck
+from model.utils.backbone import load_vgg16_extractor
 from model.region_proposal_network import FPNBasedRPN
+from model.utils.misc import normal_init, assign_feature_level
 
 # Other Utils
 from utils.config import opt
 from utils import array_tool as at
 
 
-class FasterRCNNVGG16(FasterRCNN):
+
+class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
     """Faster R-CNN based on VGG-16.
     For descriptions on the interface of this model, please refer to
     :class:`model.faster_rcnn.FasterRCNN`.
@@ -32,8 +34,8 @@ class FasterRCNNVGG16(FasterRCNN):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16(pretrained=True,deformable=opt.deformable, modulated=opt.modulated)
-        super(FasterRCNNVGG16, self).__init__(
+        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable, modulated=opt.modulated)
+        super(FPNFasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction
             rpn=FPNBasedRPN(scales=[64, 128, 256, 512],
@@ -41,7 +43,7 @@ class FasterRCNNVGG16(FasterRCNN):
                             rpn_conv=nn.Conv2d(256, 512, 3, 1, 1),
                             rpn_loc=nn.Conv2d(512, 3 * 4, 1, 1),
                             rpn_score=nn.Conv2d(512, 3 * 2, 1, 1)),
-            predictor=nn.Sequential(nn.Linear(7 * 7 * 256, 1024),
+            classifier=nn.Sequential(nn.Linear(7 * 7 * 256, 1024),
                                     nn.ReLU(True),
                                     nn.Linear(1024, 1024),
                                     nn.ReLU(True)),  # feature pooling and prediction 
@@ -50,13 +52,13 @@ class FasterRCNNVGG16(FasterRCNN):
             spatial_scale=[1/4.,1/8.,1/16.,1/32.],
             pooling_size=7,
             roi_sigma=opt.roi_sigma)
-        normal_init(self.predictor[0], 0, 0.01)
-        normal_init(self.predictor[2], 0, 0.01)
+        normal_init(self.classifier[0], 0, 0.01)
+        normal_init(self.classifier[2], 0, 0.01)
         normal_init(self.loc, 0, 0.001)
         normal_init(self.score, 0, 0.01)
 
         # FPN parameters
-        self.k0 = 4
+        self.k0 = 5
 
         # initialize the parameters of RPN
         # 1. feature extraction layers
@@ -108,10 +110,6 @@ class FasterRCNNVGG16(FasterRCNN):
     # NOTE: inherent from FasterRCNN Class
     def roi_pooling_layer(self, feature, roi):
         roi = at.totensor(roi).float()
-        # n_features -> the number of features to use for RoI-Pooling
-        #               not that of all features
-
-        # n_features = self.n_features
         # compute the lowest & highest level
         low = self.k0 - 2
         high = self.k0 + 1
@@ -155,8 +153,8 @@ class FasterRCNNVGG16(FasterRCNN):
         # flatten roi pooled feature
         pooled_feature = pooled_feature.view(pooled_feature.shape[0], -1)
 
-        # RCNN predictor
-        fc9 = self.predictor(pooled_feature)
+        # RCNN classifier
+        fc9 = self.classifier(pooled_feature)
 
         # bbox regression & classification
         roi_loc = self.loc(fc9)
@@ -164,23 +162,3 @@ class FasterRCNNVGG16(FasterRCNN):
 
         return roi_loc, roi_score
 
-# NOTE: Helper function for deciding the feature level of each RoI
-def assign_feature_level(roi, k0, low, high):
-    h = roi.data[:, 2] - roi.data[:, 0] + 1
-    w = roi.data[:, 3] - roi.data[:, 1] + 1
-    # get feature level based on formula: 
-    k = t.log2(t.sqrt(h * w) / 224.) + k0
-
-    # get lower & upper limit of feature levels
-    k = t.round(k)
-    k[k < low] = low
-    k[k > high] = high
-
-    return k
-
-def normal_init(m, mean, stddev):
-    """
-    weight initalizer: truncated normal and random normal.
-    """
-    m.weight.data.normal_(mean, stddev)
-    m.bias.data.zero_()
