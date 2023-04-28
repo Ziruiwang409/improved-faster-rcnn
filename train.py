@@ -21,13 +21,13 @@ from model.frcnn_bottleneck import Losses
 from utils import array_tool as at
 from utils.eval_tool import voc_ap
 
-def setup_logger():
-    if not os.path.exists(opt.save_dir):
-        os.makedirs(opt.save_dir)
-    f = open(f'{opt.save_dir}/log.txt', 'w')
-    sys.stdout = f
+# def setup_logger():
+#     if not os.path.exists(opt.save_dir):
+#         os.makedirs(opt.save_dir)
+#     f = open(f'{opt.save_dir}/log.txt', 'w')
+#     sys.stdout = f
 
-    return f
+#     return f
 
 
 def update_meters(meters, losses):
