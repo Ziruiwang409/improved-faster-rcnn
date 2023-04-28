@@ -3,7 +3,6 @@ import time
 import numpy as np
 import matplotlib
 import torch as t
-import visdom
 
 matplotlib.use('Agg')
 from matplotlib import pyplot as plot

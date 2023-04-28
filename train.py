@@ -10,10 +10,7 @@ from utils.config import opt
 
 #dataset
 from torch.utils.data import DataLoader
-from data.dataset import inverse_normalize
 from data.dataset import Dataset
-# from data.voc_dataset import VOCBboxDataset
-#from data.kitti_dataset import KITTIDataset
 
 # model 
 from model import FasterRCNNVGG16, FPNFasterRCNNVGG16

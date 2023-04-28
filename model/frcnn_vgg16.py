@@ -7,7 +7,7 @@ import torchvision as tv
 # Faster R-CNN Packages
 from model.frcnn_bottleneck import FasterRCNNBottleneck
 from model.utils.backbone import load_vgg16_extractor, load_vgg16_classifier
-from model.region_proposal_network import RPN
+from model.rpn.region_proposal_network import RPN
 from model.utils.misc import normal_init
 
 # Other Utils

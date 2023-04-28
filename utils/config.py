@@ -29,7 +29,7 @@ class Config:
 
 
     # preset
-    model = 'vgg16'  # choose one from ['vgg16', 'resnet50']
+    model = 'vgg16' 
     apply_fpn = True
     deformable = False
     modulated = False

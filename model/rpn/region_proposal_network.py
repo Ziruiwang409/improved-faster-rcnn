@@ -4,7 +4,7 @@ from torch.nn import functional as F
 
 # Model Utils
 from model.utils.bbox_tools import generate_anchors_fpn, generate_anchors
-from model.utils.proposal_tools import GenerateProposals, SampleTargetAnchor, SampleTargetProposal
+from model.rpn.proposal_tools import GenerateProposals, SampleTargetProposal, SampleTargetAnchor
 from model.utils.misc import normal_init, bbox_regression_loss
 
 # Other Utils
