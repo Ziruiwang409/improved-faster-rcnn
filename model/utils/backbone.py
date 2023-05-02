@@ -2,6 +2,11 @@ import torch as t
 import torch.nn as nn
 import torchvision as tv
 
+# deformable convolution
+from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
+from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
+import utils.config as opt
+
 
 
 # @TODO: add modulated deformable convolution
@@ -16,56 +21,62 @@ import torchvision as tv
     all dense layers with conv layers '''
 def load_vgg16_extractor(pretrained=True, deformable=False, modulated=False, load_basic=False):
 
-    model = tv.models.vgg16(pretrained=pretrained)
+    vgg16 = tv.models.vgg16(pretrained=pretrained)
 
-    if load_basic:
-        features = list(model.features)[:-1]
-        for layer in features[:10]:
-            for p in layer.parameters():
-                p.requires_grad = False
-        return nn.Sequential(*features)
-    else:
-        features = list(model.features)
-        for layer in features[:10]:
-            for p in layer.parameters():
-                p.requires_grad = False
-
-
-    conv6 = nn.Conv2d(512, 1024, 3, 1, padding=3, dilation=3)
-    conv7 = nn.Conv2d(1024, 1024, 1, 1)
-
-    # reshape pretrained weight
-    conv6_weight = model.classifier[0].weight.view(4096, 512, 7, 7)
-    conv6_bias = model.classifier[0].bias
-
-    conv7_weight = model.classifier[3].weight.view(4096, 4096, 1, 1)
-    conv7_bias = model.classifier[3].bias
-
-    # subsampling weight
-    conv6.weight = nn.Parameter(decimate(conv6_weight, m=[4, None, 3, 3]))
-    conv6.bias = nn.Parameter(decimate(conv6_bias, m=[4]))
-
-    conv7.weight = nn.Parameter(decimate(conv7_weight, m=[4, 4, None, None]))
-    conv7.bias = nn.Parameter(decimate(conv7_bias, m=[4]))
-
-    features += [conv6, nn.ReLU(True), conv7, nn.ReLU(True)]
-
-    if deformable and not modulated:
+    # if deformable:
+    if deformable:
         '''
             replace dconv@c3 ~ c5
         '''
-        raise NotImplementedError("Deformable layer is not implemented yet.")
-    elif deformable and modulated:
-        '''
-            replace mdconv@c3 ~ c5
-        '''
-        raise NotImplementedError("Deformable layer is not implemented yet.")
+        for i, layer in enumerate(vgg16.features):
+            if i >= 10 and isinstance(layer, nn.Conv2d):
+                vgg16.features[i] = DCN(in_channels=layer.in_channels, 
+                                          out_channels=layer.out_channels, 
+                                          kernel_size=layer.kernel_size, 
+                                          stride=layer.stride, 
+                                          padding=layer.padding, 
+                                          deformable_groups=2).cuda()
 
-    return nn.Sequential(*features)
+    if load_basic:
+        # drop last max pooling layer
+        features = list(vgg16.features)[:-1]
+
+        # keep first 10 layers fixed
+        for layer in features[:10]:
+            for p in layer.parameters():
+                p.requires_grad = False
+            
+        return nn.Sequential(*features)
+    else:
+        features = list(vgg16.features)
+        for layer in features[:10]:
+            for p in layer.parameters():
+                p.requires_grad = False
+
+        conv6 = nn.Conv2d(512, 1024, 3, 1, padding=3, dilation=3)
+        conv7 = nn.Conv2d(1024, 1024, 1, 1)
+
+        # reshape pretrained weight
+        conv6_weight = vgg16.classifier[0].weight.view(4096, 512, 7, 7)
+        conv6_bias = vgg16.classifier[0].bias
+
+        conv7_weight = vgg16.classifier[3].weight.view(4096, 4096, 1, 1)
+        conv7_bias = vgg16.classifier[3].bias
+
+        # subsampling weight
+        conv6.weight = nn.Parameter(decimate(conv6_weight, m=[4, None, 3, 3]))
+        conv6.bias = nn.Parameter(decimate(conv6_bias, m=[4]))
+
+        conv7.weight = nn.Parameter(decimate(conv7_weight, m=[4, 4, None, None]))
+        conv7.bias = nn.Parameter(decimate(conv7_bias, m=[4]))
+
+        features += [conv6, nn.ReLU(True), conv7, nn.ReLU(True)]
+
+        return nn.Sequential(*features)
 
 def load_vgg16_classifier(pretrained=True):
-    model = tv.models.vgg16(pretrained=pretrained)
-    top_layer = list(model.classifier)[:6]
+    vgg16 = tv.models.vgg16(pretrained=pretrained)
+    top_layer = list(vgg16.classifier)[:6]
     del top_layer[5]
     del top_layer[2]
     return nn.Sequential(*top_layer)

@@ -78,7 +78,10 @@ def train(**kwargs):
     # parse model parameters from config 
     opt.f_parse_args(kwargs)
 
-    print('Load dataset')
+    if opt.database == 'voc':
+        print('load voc data')
+    elif opt.database == 'kitti':
+        print('load kitti data')
     # load training dataset 
     train_data = Dataset(opt,mode='train')
     train_dataloader = DataLoader(train_data, 
@@ -93,21 +96,23 @@ def train(**kwargs):
                                  shuffle=False, 
                                  num_workers=opt.test_num_workers)
     
-
-    print('Load model')
     # model construction
     if opt.database == 'voc': 
         if opt.apply_fpn:
+            print('load FPN Faster RCNN Model')
             net = FPNFasterRCNNVGG16(n_fg_class=20).to(device)
         else:
+            print('load Faster RCNN Model')
             net = FasterRCNNVGG16(n_fg_class=20).to(device) 
     elif opt.database == 'kitti':
         if opt.apply_fpn:
+            print('load FPN Faster RCNN Model')
             net = FPNFasterRCNNVGG16(n_fg_class=3).to(device)
         else:
+            print('load Faster RCNN Model')
             net = FasterRCNNVGG16(n_fg_class=3).to(device)  # 3 classes: Car, Pedestrian, Cyclist
 
-    print('Load optimizer')
+    print('Load SDG optimizer')
     # optimizer construction
     optimizer = build_optimizer(net)
 

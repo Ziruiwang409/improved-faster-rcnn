@@ -34,7 +34,7 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16_extractor(pretrained=True,load_basic=True)
+        extractor = load_vgg16_extractor(pretrained=True,load_basic=True, deformable=opt.deformable)
         super(FasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction

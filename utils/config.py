@@ -14,30 +14,28 @@ class Config:
     train_num_workers = 8
     test_num_workers = 8
 
-    nms_thresh = 0.3        # iou threshold in nms
-    score_thresh = 0.05     # score threshold in nms
-
-    # sigma for l1_smooth_loss
-    rpn_sigma = 3.          
-    roi_sigma = 1.          
-
-    # param for optimizer
+    # optimizer params
     # 0.0005 in origin paper but 0.0001 in tf-faster-rcnn
     weight_decay = 0.0005
     lr = 1e-3
     lr_decay = 0.1
 
-
-    # preset
+    # model params
     model = 'vgg16' 
-    apply_fpn = True
-    deformable = False
-    modulated = False
+    apply_fpn = False
+    deformable = True       # use deformable conv
+    modulated = False       # use modulated deformable conv
+    deformable_groups = 1   # defromable groups (<= in_channels)
 
-    # training
+    # training params
+    nms_thresh = 0.3        # iou threshold in nms
+    score_thresh = 0.05     # score threshold in nms
+    rpn_sigma = 3.          # rpn sigma for l1_smooth_loss
+    roi_sigma = 1.          # roi sigma for l1_smooth_loss
     epoch = 14
     epoch_decay = 9
 
+    # testing params
     test_num = 10000
     save_dir = './exp'
 
