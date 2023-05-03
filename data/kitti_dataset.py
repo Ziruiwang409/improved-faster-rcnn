@@ -58,7 +58,7 @@ class KITTIDataset:
         self.ids = [id_.strip() for id_ in open(id_list_file)]
         self.data_dir = data_dir
         self.use_difficult = use_difficult
-        self.label_names = KITTI_LABEL_NAMES
+        self.label_names = KITTI_BBOX_LABEL_NAMES
 
     def __len__(self):
         return len(self.ids)
@@ -90,7 +90,7 @@ class KITTIDataset:
             # subtract 1 to make pixel indexes 0-based
             bbox.append([int(bndbox_anno.find(tag).text) - 1 for tag in ('ymin', 'xmin', 'ymax', 'xmax')])
             name = obj.find('name').text.lower().strip()
-            label.append(KITTI_LABEL_NAMES.index(name))
+            label.append(KITTI_BBOX_LABEL_NAMES.index(name))
         bbox = np.stack(bbox).astype(np.float32)
         label = np.stack(label).astype(np.int32)
         # When `use_difficult==False`, all elements in `difficult` are False.
@@ -104,7 +104,7 @@ class KITTIDataset:
     
     __getitem__= get_sample
 
-KITTI_LABEL_NAMES = (
+KITTI_BBOX_LABEL_NAMES = (
     'car', 
     'pedestrian', 
     'cyclist')

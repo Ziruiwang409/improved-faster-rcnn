@@ -5,7 +5,6 @@ import torchvision as tv
 # deformable convolution
 from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
 from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
-import utils.config as opt
 
 
 
@@ -19,7 +18,7 @@ import utils.config as opt
 '''
     Load pretrained VGG16 model and replace 
     all dense layers with conv layers '''
-def load_vgg16_extractor(pretrained=True, deformable=False, modulated=False, load_basic=False):
+def load_vgg16_extractor(pretrained=True, deformable=False, load_basic=False):
 
     vgg16 = tv.models.vgg16(pretrained=pretrained)
 
@@ -74,12 +73,18 @@ def load_vgg16_extractor(pretrained=True, deformable=False, modulated=False, loa
 
         return nn.Sequential(*features)
 
-def load_vgg16_classifier(pretrained=True):
-    vgg16 = tv.models.vgg16(pretrained=pretrained)
-    top_layer = list(vgg16.classifier)[:6]
-    del top_layer[5]
-    del top_layer[2]
-    return nn.Sequential(*top_layer)
+def load_vgg16_classifier(pretrained=True,load_basic=False):
+    if load_basic:
+        vgg16 = tv.models.vgg16(pretrained=pretrained)
+        top_layer = list(vgg16.classifier)[:6]
+        del top_layer[5]
+        del top_layer[2]
+        return nn.Sequential(*top_layer)
+    else:
+        return nn.Sequential(nn.Linear(7 * 7 * 256, 1024),
+                                    nn.ReLU(True),
+                                    nn.Linear(1024, 1024),
+                                    nn.ReLU(True))
 
 
 def decimate(tensor, m):

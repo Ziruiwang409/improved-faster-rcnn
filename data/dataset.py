@@ -10,15 +10,9 @@ import numpy as np
 from utils.config import opt
 
 
-def inverse_normalize(img):
-    if opt.caffe_pretrain:
-        img = img + (np.array([122.7717, 115.9465, 102.9801]).reshape(3, 1, 1))
-        return img[::-1, :, :]
-    # approximate un-normalize for visualize
-    return (img * 0.225 + 0.45).clip(min=0, max=1) * 255
 
 
-def normalze(img):
+def normalize(img):
     img = F.normalize(
         tensor=t.from_numpy(img),
         mean=[0.485, 0.456, 0.406],
@@ -57,50 +51,53 @@ def resize(img, min_size=600, max_size=1000):
 
 class Transform(object):
 
-    def __init__(self, min_size=600, max_size=1000, train=True):
+    def __init__(self, min_size=600, max_size=1000, mode='train'):
         self.min_size = min_size
         self.max_size = max_size
-        self.train = train
+        self.mode = mode
 
     def __call__(self, input_data):
         # get original image size
         img, bbox, label, difficult = input_data
-        ori_size = img.shape[1:]
+        ori_img = np.copy(img)
+        ori_size = ori_img.shape[1:]
         # resize image
-        img = resize(img, self.min_size, self.max_size)
-        trans_size = img.shape[1:]
+        trans_img = resize(ori_img, self.min_size, self.max_size)
+        trans_size = trans_img.shape[1:]
         # get scale
-        img = normalze(img)
+        trans_img = normalize(trans_img)
         scale = trans_size[0] / ori_size[0]
 
         # Transform if training
-        if self.train:
+        if self.mode == 'train':
             # resize bbox
             bbox = resize_bbox(bbox, ori_size, trans_size)
             # image transformation
-            img, params = random_flip(img, x_random=True, return_param=True)
+            trans_img, params = random_flip(trans_img, x_random=True, return_param=True)
             # bbox transformation
             bbox = flip_bbox(bbox, trans_size, x_flip=params['x_flip'])
 
-            return img.copy(), bbox.copy(), label.copy(), scale
-        else:
-            return img, bbox, label, scale, ori_size, difficult
+            return trans_img.copy(), bbox.copy(), label.copy(), scale
+        elif self.mode == 'test':
+            return trans_img, bbox, label, scale, ori_size, difficult
+        elif self.mode == 'vis':
+            return ori_img, trans_img, scale, ori_size
 
 class Dataset:
     def __init__(self, opt, mode='train'):
         self.opt = opt
-        self.train = True if mode == 'train' else False
+        self.mode = mode
         if opt.database == 'voc':
-            if self.train:
+            if self.mode == 'train':
                 self.db = VOCBboxDataset(opt.voc_data_dir, split='trainval')
             else:
                 self.db = VOCBboxDataset(opt.voc_data_dir, split='test', use_difficult=True)
         elif opt.database == 'kitti':
-            if self.train:
+            if self.mode == 'train':
                 self.db = KITTIDataset(opt.kitti_data_dir, split='train')
             else:
                 self.db = KITTIDataset(opt.kitti_data_dir, split='val')
-        self.tsf = Transform(opt.min_size, opt.max_size, train=self.train)
+        self.tsf = Transform(opt.min_size, opt.max_size, mode=mode)
 
     def __getitem__(self, idx):
         input_data = self.db.get_sample(idx)

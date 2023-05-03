@@ -73,13 +73,13 @@ class FasterRCNNBottleneck(nn.Module):
 
     """
 
-    def __init__(self, extractor, rpn, classifier, n_classes, loc, score,
+    def __init__(self, extractor, rpn, predictor, n_classes, loc, score,
                  spatial_scale, pooling_size, roi_sigma):
         super(FasterRCNNBottleneck, self).__init__()
         # architecture parameters
         self.extractor = extractor
         self.rpn = rpn
-        self.classifier = classifier
+        self.predictor = predictor
 
         # hyper parameters
         self.n_classes = n_classes

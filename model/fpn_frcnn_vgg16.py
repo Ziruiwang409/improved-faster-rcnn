@@ -6,9 +6,14 @@ import torchvision as tv
 
 # Faster R-CNN Packages
 from model.frcnn_bottleneck import FasterRCNNBottleneck
-from model.utils.backbone import load_vgg16_extractor
+from model.utils.backbone import load_vgg16_extractor,load_vgg16_classifier
 from model.rpn.region_proposal_network import FPNBasedRPN
 from model.utils.misc import normal_init, assign_feature_level
+
+# Deformable Convolution
+from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
+from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
+
 
 # Other Utils
 from utils.config import opt
@@ -34,7 +39,7 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable, modulated=opt.modulated)
+        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable, load_basic=False)
         super(FPNFasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction
@@ -43,17 +48,14 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
                             rpn_conv=nn.Conv2d(256, 512, 3, 1, 1),
                             rpn_loc=nn.Conv2d(512, 3 * 4, 1, 1),
                             rpn_score=nn.Conv2d(512, 3 * 2, 1, 1)),
-            classifier=nn.Sequential(nn.Linear(7 * 7 * 256, 1024),
-                                    nn.ReLU(True),
-                                    nn.Linear(1024, 1024),
-                                    nn.ReLU(True)),  # feature pooling and prediction 
+            predictor=load_vgg16_classifier(load_basic=False),  # feature pooling and prediction 
             loc=nn.Linear(1024, (n_fg_class + 1) * 4),
             score=nn.Linear(1024, n_fg_class + 1),
             spatial_scale=[1/4.,1/8.,1/16.,1/32.],
             pooling_size=7,
             roi_sigma=opt.roi_sigma)
-        normal_init(self.classifier[0], 0, 0.01)
-        normal_init(self.classifier[2], 0, 0.01)
+        normal_init(self.predictor[0], 0, 0.01)
+        normal_init(self.predictor[2], 0, 0.01)
         normal_init(self.loc, 0, 0.001)
         normal_init(self.score, 0, 0.01)
 
@@ -126,18 +128,28 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
 
             level_idx = t.where(k == l)[0]
             box_to_levels.append(level_idx)
+            
+            # add batch index to roi
+            rois = t.cat([t.zeros(level_idx.size(0), 1).cuda(), roi[level_idx]],dim=1)
+            # change roi order to (batch_index, x1, y1, x2, y2)
+            rois = rois[:, [0, 2, 1, 4, 3]].contiguous()
 
-            index_and_roi = t.cat([t.zeros(level_idx.size(0), 1).cuda(), roi[level_idx]],dim=1)
-            # yx -> xy
-            index_and_roi = index_and_roi[:, [0, 2, 1, 4, 3]].contiguous()
+            if opt.deformable:
+                dpooling = DCNPooling(spatial_scale=self.spatial_scale[i],
+                                      pooled_size=self.pooling_size,
+                                      output_dim=feature.shape[i][1],
+                                      no_trans=False,
+                                      group_size=1,
+                                      trans_std=0.1,
+                                      deform_fc_dim=1024).cuda()
+                
+                pooled_feat = dpooling(feature[i], rois)
+            else:
+                pooled_feat = tv.ops.roi_pool(feature[i],
+                                              rois,
+                                              self.pooling_size,
+                                              self.spatial_scale[i])
 
-            # pooled_feats_l = []
-            # for j in range(i, i + n_features):
-            pooled_feat = tv.ops.roi_pool(feature[i],
-                                   index_and_roi,
-                                   self.pooling_size,
-                                   self.spatial_scale[i])
-            # feat -> n_roi_lx256x7x7
 
             pooled_feats.append(pooled_feat)
 
@@ -154,7 +166,7 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
         pooled_feature = pooled_feature.view(pooled_feature.shape[0], -1)
 
         # RCNN classifier
-        fc9 = self.classifier(pooled_feature)
+        fc9 = self.predictor(pooled_feature)
 
         # bbox regression & classification
         roi_loc = self.loc(fc9)

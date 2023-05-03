@@ -10,6 +10,10 @@ from model.utils.backbone import load_vgg16_extractor, load_vgg16_classifier
 from model.rpn.region_proposal_network import RPN
 from model.utils.misc import normal_init
 
+# Deformable Convolution
+from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
+from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
+
 # Other Utils
 from utils.config import opt
 from utils import array_tool as at
@@ -34,7 +38,7 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16_extractor(pretrained=True,load_basic=True, deformable=opt.deformable)
+        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable,load_basic=True)
         super(FasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction
@@ -43,12 +47,16 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
                             rpn_conv=nn.Conv2d(512, 512, 3, 1, 1),
                             rpn_loc=nn.Conv2d(512, 12 * 4, 1, 1),
                             rpn_score=nn.Conv2d(512, 12 * 2, 1, 1)),
-            classifier=load_vgg16_classifier(pretrained=True),
+            predictor=load_vgg16_classifier(pretrained=True, load_basic=True),
             loc=nn.Linear(4096, (n_fg_class + 1) * 4),
             score=nn.Linear(4096, n_fg_class + 1),
             spatial_scale=1/16.,
             pooling_size=7,
             roi_sigma=opt.roi_sigma)
+        # deformable roi pooling
+        self.pooling = tv.ops.RoIPool(self.pooling_size,self.spatial_scale)
+
+        # initialize parameters
         normal_init(self.loc, 0, 0.001)
         normal_init(self.score, 0, 0.01)
     
@@ -61,11 +69,12 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
         n = roi.shape[0]
         roi = at.totensor(roi).float()
 
-        index_and_roi = t.cat([t.zeros(n, 1).cuda(), roi],dim=1)
-        # yx -> xy
-        index_and_roi = index_and_roi[:, [0, 2, 1, 4, 3]].contiguous()
-
-        return tv.ops.roi_pool(feature,index_and_roi, self.pooling_size, self.spatial_scale)
+        # add batch index to roi
+        rois = t.cat([t.zeros(n, 1).cuda(), roi],dim=1)
+        # change roi order to (batch_index, x1, y1, x2, y2)
+        rois = rois[:, [0, 2, 1, 4, 3]].contiguous()
+   
+        return self.pooling(feature, rois)
 
 
     def bbox_regression_and_classification_layer(self, pooled_feature):
@@ -74,7 +83,7 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
         pooled_feature = pooled_feature.view(pooled_feature.shape[0], -1)
 
         # RCNN classifier
-        fc = self.classifier(pooled_feature)
+        fc = self.predictor(pooled_feature)
 
         # bbox regression & classification
         roi_loc = self.loc(fc)
