@@ -3,8 +3,9 @@ import torch.nn as nn
 import torchvision as tv
 
 # deformable convolution
-from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
-from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
+from model.dcn.deform_conv_v2 import DeformableConv2d
+from utils.config import opt
+from model.utils.misc import normal_init
 
 
 
@@ -18,23 +19,9 @@ from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
 '''
     Load pretrained VGG16 model and replace 
     all dense layers with conv layers '''
-def load_vgg16_extractor(pretrained=True, deformable=False, load_basic=False):
+def load_vgg16_extractor(pretrained=True, load_basic=False):
 
     vgg16 = tv.models.vgg16(pretrained=pretrained)
-
-    # if deformable:
-    if deformable:
-        '''
-            replace dconv@c3 ~ c5
-        '''
-        for i, layer in enumerate(vgg16.features):
-            if i >= 10 and isinstance(layer, nn.Conv2d):
-                vgg16.features[i] = DCN(in_channels=layer.in_channels, 
-                                          out_channels=layer.out_channels, 
-                                          kernel_size=layer.kernel_size, 
-                                          stride=layer.stride, 
-                                          padding=layer.padding, 
-                                          deformable_groups=2).cuda()
 
     if load_basic:
         # drop last max pooling layer
@@ -44,6 +31,31 @@ def load_vgg16_extractor(pretrained=True, deformable=False, load_basic=False):
         for layer in features[:10]:
             for p in layer.parameters():
                 p.requires_grad = False
+        
+
+        if opt.deformable:
+            # get weight and bias from pretrained model
+            conv4_1_weight = vgg16.features[24].weight
+            conv4_1_bias = vgg16.features[24].bias
+            conv4_2_weight = vgg16.features[26].weight
+            conv4_2_bias = vgg16.features[26].bias
+            conv4_3_weight = vgg16.features[28].weight
+            conv4_3_bias = vgg16.features[28].bias
+
+            
+            vgg16.features[24] = DeformableConv2d(512,512, (3,3),1, 1)
+            vgg16.features[26] = DeformableConv2d(512,512, (3,3),1, 1)
+            vgg16.features[28] = DeformableConv2d(512,512, (3,3),1, 1)
+
+            #load pretrained weight and bias to deformable convolution
+            vgg16.features[24].weight = nn.Parameter(conv4_1_weight.view(512,512,3,3))
+            vgg16.features[24].bias = nn.Parameter(conv4_1_bias)
+            vgg16.features[26].weight = nn.Parameter(conv4_2_weight.view(512,512,3,3))
+            vgg16.features[26].bias = nn.Parameter(conv4_2_bias)
+            vgg16.features[28].weight = nn.Parameter(conv4_3_weight.view(512,512,3,3))
+            vgg16.features[28].bias = nn.Parameter(conv4_3_bias)
+            
+
             
         return nn.Sequential(*features)
     else:

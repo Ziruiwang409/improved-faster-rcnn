@@ -99,35 +99,46 @@ def train(**kwargs):
     # model construction
     if opt.database == 'voc': 
         if opt.apply_fpn:
-            print('load FPN Faster RCNN Model')
+            if opt.deformable:
+                print('load Deformable FPN Faster RCNN Model')
+            else:
+                print('load FPN Faster RCNN Model')
             net = FPNFasterRCNNVGG16(n_fg_class=20).to(device)
         else:
-            print('load Faster RCNN Model')
+            if opt.deformable:
+                print('load Deformable Faster RCNN Model')
+            else:
+                print('load Faster RCNN Model')
             net = FasterRCNNVGG16(n_fg_class=20).to(device) 
     elif opt.database == 'kitti':
         if opt.apply_fpn:
-            print('load FPN Faster RCNN Model')
+            if opt.deformable:
+                print('load Deformable FPN Faster RCNN Model')
+            else:
+                print('load FPN Faster RCNN Model')
             net = FPNFasterRCNNVGG16(n_fg_class=3).to(device)
         else:
-            print('load Faster RCNN Model')
+            if opt.deformable:
+                print('load Deformable Faster RCNN Model')
+            else:
+                print('load Faster RCNN Model')
             net = FasterRCNNVGG16(n_fg_class=3).to(device)  # 3 classes: Car, Pedestrian, Cyclist
 
     print('Load SDG optimizer')
     # optimizer construction
     optimizer = build_optimizer(net)
 
-    print('Load hyperparameters')
     # fitting 
     meters = {k: AverageValueMeter() for k in Losses._fields}
     best_mAP = 0
     best_path = None
     lr = opt.lr
 
-
     print('Start training...')
     for epoch in range(1, opt.epoch + 1):
         # switch to train mode
         net.train()
+        print(f'epoch #{epoch}')
         # reset meters
         reset_meters(meters)
         # train batch
@@ -149,20 +160,17 @@ def train(**kwargs):
         roi_loc_loss = loss_metadata['roi_loc_loss']
         roi_cls_loss = loss_metadata['roi_cls_loss']
         total_loss = loss_metadata['total_loss']
-        print('epoch #{}: lr=={} | rpn_loc_loss=={:.4f} | rpn_cls_loss=={:.4f} | roi_loc_loss=={:.4f} | roi_cls_loss=={:.4f} | total_loss=={:.4f}'.format(epoch,
-                                                                                                                                                          lr, 
-                                                                                                                                                          rpn_loc_loss, 
-                                                                                                                                                          rpn_cls_loss, 
-                                                                                                                                                          roi_loc_loss, 
-                                                                                                                                                          roi_cls_loss,
-                                                                                                                                                          total_loss))
+        print('lr=={} | rpn_loc_loss=={:.4f} | rpn_cls_loss=={:.4f} | roi_loc_loss=={:.4f} | roi_cls_loss=={:.4f} | total_loss=={:.4f}'.format(lr, 
+                                                                                                                                               rpn_loc_loss, 
+                                                                                                                                               rpn_cls_loss, 
+                                                                                                                                               roi_loc_loss, 
+                                                                                                                                               roi_cls_loss,
+                                                                                                                                               total_loss))
 
         # evaluate
         net.eval()
         
-
         mAP = voc_ap(net, test_dataloader)
-
 
         # save model (if best model)
         if mAP > best_mAP:
@@ -179,7 +187,10 @@ def train(**kwargs):
             lr = lr * opt.lr_decay
     
     # save final model
-    model_name = 'frcnn_vgg16' if not opt.apply_fpn else 'fpn_frcnn_vgg16'
+    if opt.deformable:
+        model_name = 'deformable_frcnn_vgg16' if not opt.apply_fpn else 'deformable_fpn_frcnn_vgg16'
+    else:
+        model_name = 'frcnn_vgg16' if not opt.apply_fpn else 'fpn_frcnn_vgg16'
     PATH = f'{opt.save_dir}/{opt.database}/{model_name}.pth'
     target_dir = os.path.dirname(PATH)
     if not os.path.exists(target_dir):

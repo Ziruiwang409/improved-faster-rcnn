@@ -10,10 +10,6 @@ from model.utils.backbone import load_vgg16_extractor,load_vgg16_classifier
 from model.rpn.region_proposal_network import FPNBasedRPN
 from model.utils.misc import normal_init, assign_feature_level
 
-# Deformable Convolution
-from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
-from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
-
 
 # Other Utils
 from utils.config import opt

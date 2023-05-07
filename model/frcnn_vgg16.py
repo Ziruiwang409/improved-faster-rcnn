@@ -10,9 +10,7 @@ from model.utils.backbone import load_vgg16_extractor, load_vgg16_classifier
 from model.rpn.region_proposal_network import RPN
 from model.utils.misc import normal_init
 
-# Deformable Convolution
-from model.dcnv2.dcn_v2 import dcn_v2_conv, DCNv2, DCN
-from model.dcnv2.dcn_v2 import dcn_v2_pooling, DCNv2Pooling, DCNPooling
+# deformable module
 
 # Other Utils
 from utils.config import opt
@@ -38,7 +36,7 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable,load_basic=True)
+        extractor = load_vgg16_extractor(pretrained=True,load_basic=True)
         super(FasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction
@@ -80,9 +78,9 @@ class FasterRCNNVGG16(FasterRCNNBottleneck):
     def bbox_regression_and_classification_layer(self, pooled_feature):
         
         # flatten roi pooled feature
-        pooled_feature = pooled_feature.view(pooled_feature.shape[0], -1)
+        pooled_feature = pooled_feature.view(pooled_feature.shape[0],-1)
 
-        # RCNN classifier
+        # RCNN Head layer
         fc = self.predictor(pooled_feature)
 
         # bbox regression & classification

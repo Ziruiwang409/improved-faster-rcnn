@@ -6,7 +6,7 @@ from pprint import pprint
 class Config:
 
     # dataset params
-    database = 'kitti'  # choose one from ['VOC', 'KITTI']
+    database = 'voc'  # choose one from ['VOC', 'KITTI']
     voc_data_dir = '/data/ziruiw3/VOCdevkit/VOC2007/'
     kitti_data_dir = '/data/ziruiw3/KITTI2VOC/'
     min_size = 600  # image resize
@@ -22,23 +22,22 @@ class Config:
 
     # model params
     model = 'vgg16' 
-    apply_fpn = False       # use feature pyramid network for region proposal
-    deformable = False       # use deformable conv + deformable roi pooling
-    deformable_groups = 1   # defromable groups (<= in_channels)
+    apply_fpn =  False      # use feature pyramid network for region proposal
+    deformable = True       # use deformable conv + deformable roi pooling
+    modulated = False       # use modulated deformable conv
 
     # training params
     nms_thresh = 0.3        # iou threshold in nms
     score_thresh = 0.05     # score threshold in nms
     rpn_sigma = 3.          # rpn sigma for l1_smooth_loss
     roi_sigma = 1.          # roi sigma for l1_smooth_loss
-    epoch = 14              # total training epoch
-    epoch_decay = 9         # epoch to decay lr
+    epoch = 15              # total training epoch
+    epoch_decay = 10         # epoch to decay lr
 
     # testing params
     n_visual_imgs = 2   # number of images to visualize
     visualize = True
-    plot_dir = './visuals'
-    save_dir = './exp_deformable'
+    save_dir = './exp'
 
     def f_parse_args(self, kwargs):
         '''
