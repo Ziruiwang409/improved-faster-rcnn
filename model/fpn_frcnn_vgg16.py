@@ -35,7 +35,7 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
 
     def __init__(self,n_fg_class=20):
         # feature extraction (Backbone CNN: VGG16)
-        extractor = load_vgg16_extractor(pretrained=True,deformable=opt.deformable, load_basic=False)
+        extractor = load_vgg16_extractor(pretrained=True,load_basic=False)
         super(FPNFasterRCNNVGG16, self).__init__(
             n_classes=n_fg_class + 1,   # +1 for background
             extractor = extractor,     # feature extraction
@@ -44,7 +44,7 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
                             rpn_conv=nn.Conv2d(256, 512, 3, 1, 1),
                             rpn_loc=nn.Conv2d(512, 3 * 4, 1, 1),
                             rpn_score=nn.Conv2d(512, 3 * 2, 1, 1)),
-            predictor=load_vgg16_classifier(load_basic=False),  # feature pooling and prediction 
+            predictor=load_vgg16_classifier(pretrained=True, load_basic=False),  # feature pooling and prediction 
             loc=nn.Linear(1024, (n_fg_class + 1) * 4),
             score=nn.Linear(1024, n_fg_class + 1),
             spatial_scale=[1/4.,1/8.,1/16.,1/32.],
@@ -130,18 +130,8 @@ class FPNFasterRCNNVGG16(FasterRCNNBottleneck):
             # change roi order to (batch_index, x1, y1, x2, y2)
             rois = rois[:, [0, 2, 1, 4, 3]].contiguous()
 
-            if opt.deformable:
-                dpooling = DCNPooling(spatial_scale=self.spatial_scale[i],
-                                      pooled_size=self.pooling_size,
-                                      output_dim=feature.shape[i][1],
-                                      no_trans=False,
-                                      group_size=1,
-                                      trans_std=0.1,
-                                      deform_fc_dim=1024).cuda()
-                
-                pooled_feat = dpooling(feature[i], rois)
-            else:
-                pooled_feat = tv.ops.roi_pool(feature[i],
+
+            pooled_feat = tv.ops.roi_pool(feature[i],
                                               rois,
                                               self.pooling_size,
                                               self.spatial_scale[i])

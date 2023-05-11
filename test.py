@@ -61,9 +61,9 @@ def test(**kwargs):
     # load pretrained weight
     if opt.deformable:
         if opt.apply_fpn:
-            PATH = f'./exp_deformable/{opt.database}/fpn_frcnn_vgg16.pth'
+            PATH = f'./exp/{opt.database}/deformable_fpn_frcnn_vgg16.pth'
         else:
-            PATH = f'./exp_deformable/{opt.database}/frcnn_vgg16.pth'
+            PATH = f'./exp/{opt.database}/deformable_frcnn_vgg16.pth'
     else:
         if opt.apply_fpn:
             PATH = f'./exp/{opt.database}/fpn_frcnn_vgg16.pth'
@@ -76,7 +76,10 @@ def test(**kwargs):
     # evaluation
     net.eval()
 
-    model_name = 'fpn_frcnn_vgg16' if opt.apply_fpn else 'frcnn_vgg16'
+    if opt.deformable:
+        model_name = 'deformable_fpn_frcnn_vgg16' if opt.apply_fpn else 'deformable_frcnn_vgg16'
+    else:
+        model_name = 'fpn_frcnn_vgg16' if opt.apply_fpn else 'frcnn_vgg16'
     visual_dir = f'./exp/visuals/{opt.database}/{model_name}'
     if not os.path.exists(visual_dir):
         os.makedirs(visual_dir)

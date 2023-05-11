@@ -27,20 +27,20 @@ def load_vgg16_extractor(pretrained=True, load_basic=False):
         # drop last max pooling layer
         features = list(vgg16.features)[:-1]
 
-        # keep first 10 layers fixed
+        # keep C1, C2 unchanged
         for layer in features[:10]:
             for p in layer.parameters():
                 p.requires_grad = False
         
-
+        # convert C5 layer in VGG16 to deformable Convolution layer
         if opt.deformable:
             # get weight and bias from pretrained model
-            conv4_1_weight = vgg16.features[24].weight
-            conv4_1_bias = vgg16.features[24].bias
-            conv4_2_weight = vgg16.features[26].weight
-            conv4_2_bias = vgg16.features[26].bias
-            conv4_3_weight = vgg16.features[28].weight
-            conv4_3_bias = vgg16.features[28].bias
+            conv5_1_weight = vgg16.features[24].weight
+            conv5_1_bias = vgg16.features[24].bias
+            conv5_2_weight = vgg16.features[26].weight
+            conv5_2_bias = vgg16.features[26].bias
+            conv5_3_weight = vgg16.features[28].weight
+            conv5_3_bias = vgg16.features[28].bias
 
             
             vgg16.features[24] = DeformableConv2d(512,512, (3,3),1, 1)
@@ -48,12 +48,12 @@ def load_vgg16_extractor(pretrained=True, load_basic=False):
             vgg16.features[28] = DeformableConv2d(512,512, (3,3),1, 1)
 
             #load pretrained weight and bias to deformable convolution
-            vgg16.features[24].weight = nn.Parameter(conv4_1_weight.view(512,512,3,3))
-            vgg16.features[24].bias = nn.Parameter(conv4_1_bias)
-            vgg16.features[26].weight = nn.Parameter(conv4_2_weight.view(512,512,3,3))
-            vgg16.features[26].bias = nn.Parameter(conv4_2_bias)
-            vgg16.features[28].weight = nn.Parameter(conv4_3_weight.view(512,512,3,3))
-            vgg16.features[28].bias = nn.Parameter(conv4_3_bias)
+            vgg16.features[24].weight = nn.Parameter(conv5_1_weight.view(512,512,3,3))
+            vgg16.features[24].bias = nn.Parameter(conv5_1_bias)
+            vgg16.features[26].weight = nn.Parameter(conv5_2_weight.view(512,512,3,3))
+            vgg16.features[26].bias = nn.Parameter(conv5_2_bias)
+            vgg16.features[28].weight = nn.Parameter(conv5_3_weight.view(512,512,3,3))
+            vgg16.features[28].bias = nn.Parameter(conv5_3_bias)
             
 
             
@@ -63,25 +63,49 @@ def load_vgg16_extractor(pretrained=True, load_basic=False):
         for layer in features[:10]:
             for p in layer.parameters():
                 p.requires_grad = False
+        
+        # convert C5 layer in VGG16 to deformable Convolution layer
+        if opt.deformable:
+            # get weight and bias from pretrained model
+            conv5_1_weight = vgg16.features[24].weight
+            conv5_1_bias = vgg16.features[24].bias
+            conv5_2_weight = vgg16.features[26].weight
+            conv5_2_bias = vgg16.features[26].bias
+            conv5_3_weight = vgg16.features[28].weight
+            conv5_3_bias = vgg16.features[28].bias
 
-        conv6 = nn.Conv2d(512, 1024, 3, 1, padding=3, dilation=3)
-        conv7 = nn.Conv2d(1024, 1024, 1, 1)
+            
+            vgg16.features[24] = DeformableConv2d(512,512, (3,3),1, 1)
+            vgg16.features[26] = DeformableConv2d(512,512, (3,3),1, 1)
+            vgg16.features[28] = DeformableConv2d(512,512, (3,3),1, 1)
+
+            #load pretrained weight and bias to deformable convolution
+            vgg16.features[24].weight = nn.Parameter(conv5_1_weight.view(512,512,3,3))
+            vgg16.features[24].bias = nn.Parameter(conv5_1_bias)
+            vgg16.features[26].weight = nn.Parameter(conv5_2_weight.view(512,512,3,3))
+            vgg16.features[26].bias = nn.Parameter(conv5_2_bias)
+            vgg16.features[28].weight = nn.Parameter(conv5_3_weight.view(512,512,3,3))
+            vgg16.features[28].bias = nn.Parameter(conv5_3_bias)
+
+        # add extra convolution layer as (C6)
+        conv6_1 = nn.Conv2d(512, 1024, 3, 1, padding=3, dilation=3)
+        conv6_2 = nn.Conv2d(1024, 1024, 1, 1)
 
         # reshape pretrained weight
-        conv6_weight = vgg16.classifier[0].weight.view(4096, 512, 7, 7)
-        conv6_bias = vgg16.classifier[0].bias
+        conv6_1_weight = vgg16.classifier[0].weight.view(4096, 512, 7, 7)
+        conv6_1_bias = vgg16.classifier[0].bias
 
-        conv7_weight = vgg16.classifier[3].weight.view(4096, 4096, 1, 1)
-        conv7_bias = vgg16.classifier[3].bias
+        conv6_2_weight = vgg16.classifier[3].weight.view(4096, 4096, 1, 1)
+        conv6_2_bias = vgg16.classifier[3].bias
 
         # subsampling weight
-        conv6.weight = nn.Parameter(decimate(conv6_weight, m=[4, None, 3, 3]))
-        conv6.bias = nn.Parameter(decimate(conv6_bias, m=[4]))
+        conv6_1.weight = nn.Parameter(decimate(conv6_1_weight, m=[4, None, 3, 3]))
+        conv6_1.bias = nn.Parameter(decimate(conv6_1_bias, m=[4]))
 
-        conv7.weight = nn.Parameter(decimate(conv7_weight, m=[4, 4, None, None]))
-        conv7.bias = nn.Parameter(decimate(conv7_bias, m=[4]))
+        conv6_2.weight = nn.Parameter(decimate(conv6_2_weight, m=[4, 4, None, None]))
+        conv6_2.bias = nn.Parameter(decimate(conv6_2_bias, m=[4]))
 
-        features += [conv6, nn.ReLU(True), conv7, nn.ReLU(True)]
+        features += [conv6_1, nn.ReLU(True), conv6_2, nn.ReLU(True)]
 
         return nn.Sequential(*features)
 
