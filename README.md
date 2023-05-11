@@ -4,7 +4,7 @@ Zirui Wang
 - Pytorch implementation of Faster R-CNN based on VGG16.
 - Supports Feature Pyramid Network (FPN).
 - Supports Deformable Convolution (DCNv1) 
-- Accomplished Repot can be accessed [here]
+- Pretrained model can be found [here](https://drive.google.com/drive/folders/1XCTZjdumgNVPtH3OI-FrcWsyC0-uYHGG?usp=sharing)
 
 ## 1. Introduction
 
