@@ -1,4 +1,4 @@
-# Object Detector for Autonomous Vehicles Based on Improved Faster RCNN 
+# Object Detector for Autonomous Vehicles Based on Faster RCNN 
 Zirui Wang
 
 - Pytorch implementation of Faster R-CNN based on VGG16.
